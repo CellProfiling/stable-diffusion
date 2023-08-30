@@ -43,6 +43,7 @@ dependencies:
     - invisible-watermark==0.1.5
     - test-tube>=0.7.5
     - opencv-python-headless
+    - mlcrate==0.1.0
     - -e git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers
     - -e git+https://github.com/openai/CLIP.git@main#egg=clip
     - -e git+https://github.com/haoxusci/pytorch_zoo@master#egg=pytorch_zoo

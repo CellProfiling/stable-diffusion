@@ -110,6 +110,8 @@ data:
     batch_size: 8 # We can use a maximum batch size of 8 on a single GPU; doesn't need to change this when using different numbers of GPUs
     num_workers: 0 # Number of dataloader subprocesses per GPU process (if using DDP); set it to 1 or 2 in this case
     wrap: False
+    use_worker_init_fn: true
+    shuffle_val_dataloader: true
     # train:
     #   target: ldm.data.hpa.HPACombineDatasetMetadata
     #   params:
@@ -154,12 +156,13 @@ lightning:
       params:
         batch_frequency: 4000
         log_validation: true
-        val_batch_frequency: 4000
+        val_batch_frequency: 1
         monitor_val_metric: "val/loss_simple_ema"
         max_images: 8
         increase_log_steps: false
         log_to_slack: []
         log_first_step: true
+        log_on_batch_idx: true
         log_images_kwargs:
           ddim_steps: 100
           quantize_denoised: false

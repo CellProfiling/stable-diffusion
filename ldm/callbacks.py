@@ -72,6 +72,7 @@ class ImageLogger(Callback):
     def __init__(self, batch_frequency, max_images, clamp=True, increase_log_steps=True,
                  rescale=True, disabled=False, log_on_batch_idx=False, log_first_step=False,
                  log_to_slack=None, log_images_kwargs=None, log_validation=False, val_batch_frequency=1, monitor_val_metric=None):
+        print(f"Process {os.getpid()} in __init__()")
         super().__init__()
         self.rescale = rescale
         self.batch_freq = batch_frequency
@@ -93,8 +94,8 @@ class ImageLogger(Callback):
         self.log_to_slack = log_to_slack
         self._last_val_loss = None
         self.monitor_val_metric = monitor_val_metric
+        self.metrics = {"train/mse": [], "train/ssim": [], "val/mse": [], "val/ssim": []}
 
-    @rank_zero_only
     def _testtube(self, pl_module, images, samples, targets, batch_idx, split):
         for k in images:
             grid = torchvision.utils.make_grid(images[k])
@@ -105,8 +106,9 @@ class ImageLogger(Callback):
                 tag, grid,
                 global_step=pl_module.global_step)
 
-    @rank_zero_only
+    # @rank_zero_only
     def _wandb(self, pl_module, images, samples, targets, batch_idx, split):
+        print(f"Process {os.getpid()} in _wandb()")
         for k in images:
             grid = (images[k] + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
             image = wandb.Image(grid)
@@ -117,9 +119,10 @@ class ImageLogger(Callback):
         mse, ssim = calc_metrics(samples, targets)
         # pl_module.log(f"{split}/mse", mse) # Don't set `on_step` or `on_epoch` since this is already inside `on_train_batch_end()` or `on_validation_batch_end`
         # pl_module.log(f"{split}/ssim", ssim)
-        wandb.log({f"{split}/mse": mse, f"{split}/ssim": ssim}, step=pl_module.global_step)
+        self.metrics[f"{split}/mse"].append(mse)
+        self.metrics[f"{split}/ssim"].append(ssim)
 
-    @rank_zero_only
+    # @rank_zero_only
     def log_local(self, save_dir, split, images,
                   global_step, current_epoch, batch_idx):
         root = os.path.join(save_dir, "images", split)
@@ -181,15 +184,17 @@ class ImageLogger(Callback):
             return True
         return False
 
+    @rank_zero_only
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        print(f"In on_train_batch_end, batch_idx {batch_idx}")
+        print(f"Process {os.getpid()} in on_train_batch_end(), batch_idx {batch_idx}, global step {pl_module.global_step}")
         check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
         if not self.disabled and (pl_module.global_step > 0 or self.log_first_step) and self.check_frequency(check_idx):
             print(f"Logging training images in batch {batch_idx} at step {pl_module.global_step}")
             self.log_img(pl_module, batch, batch_idx, split="train")
 
+    @rank_zero_only
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        print(f"In on_validation_batch_end, batch_idx {batch_idx}")
+        print(f"Process {os.getpid()} in on_validation_batch_end(), batch_idx {batch_idx}, global step {pl_module.global_step}")
         if self.log_validation and batch_idx % self.val_batch_frequency == 0 and not self.disabled and pl_module.global_step > 0:
             print(f"Logging validation images in batch {batch_idx}")
             self.log_img(pl_module, batch, batch_idx, split="val")
@@ -197,7 +202,9 @@ class ImageLogger(Callback):
             if (pl_module.calibrate_grad_norm and batch_idx % 25 == 0) and batch_idx > 0:
                 self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
 
+    @rank_zero_only
     def on_validation_epoch_end(self, trainer, pl_module):
+        print(f"Process {os.getpid()} in on_validation_epoch_end(), global step {pl_module.global_step}")
         if self.log_to_slack and self.monitor_val_metric and self.monitor_val_metric in trainer.logged_metrics:
             val = trainer.logged_metrics[self.monitor_val_metric]
             if self._last_val_loss:
@@ -206,7 +213,14 @@ class ImageLogger(Callback):
                     send_message_to_slack(f"🎉 Validation metric updated: {self.monitor_val_metric} reached {val}")
             else:
                 self._last_val_loss = val
+        wandb.log({f"val/mse": np.mean(self.metrics["val/mse"]), f"val/ssim": np.mean(self.metrics["val/ssim"])}, step=pl_module.global_step)
+        self.metrics["val/mse"], self.metrics["val/ssim"] = [], []
 
+    @rank_zero_only
+    def on_train_epoch_end(self, trainer, pl_module):
+        print(f"Process {os.getpid()} in on_train_epoch_end(), global step {pl_module.global_step}")
+        wandb.log({f"train/mse": np.mean(self.metrics["train/mse"]), f"train/ssim": np.mean(self.metrics["train/ssim"])}, step=pl_module.global_step)
+        self.metrics["train/mse"], self.metrics["train/ssim"] = [], []
 
 class CUDACallback(Callback):
     # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
