@@ -16,11 +16,14 @@ model:
       ch: 128
       ch_mult:
       - 1
+      - 1
+      - 2
       - 2
       - 4
       num_res_blocks: 2
-      attn_resolutions: []
+      attn_resolutions: [16]
       dropout: 0.0
+      attn_type: none
     lossconfig:
       target: ldm.modules.losses.vqperceptual.VQLPIPSWithDiscriminator
       params:
@@ -32,10 +35,10 @@ model:
         n_classes: 8192
 
 data:
-  target: main.DataModuleFromConfig
+  target: ldm.data.base.DataModuleFromConfig
   params:
-    batch_size: 8
-    # num_workers: 0 # disable multiprocessing
+    batch_size: 1
+    num_workers: 0 # disable multiprocessing
     wrap: True
     train:
       target: ldm.data.hpa.HPACombineDatasetSR
@@ -43,7 +46,7 @@ data:
         filename: shard-{000000..000335}  # sample count: 716*336
         channels: [1, 1, 1] # replace the green channel with ER
         length: 80000
-        size: 256
+        size: 1024
         degradation: pil_nearest
     validation:
       target: ldm.data.hpa.HPACombineDatasetSR  # sample count: 716*10
@@ -51,7 +54,7 @@ data:
         filename: shard-{000335..000345}
         channels: [1, 1, 1] # replace the green channel with ER
         length: 7160
-        size: 256
+        size: 1024
         degradation: pil_nearest
 
 lightning:

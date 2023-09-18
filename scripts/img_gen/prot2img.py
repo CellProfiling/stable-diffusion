@@ -93,7 +93,7 @@ def main(opt):
     else:
         name = f"{split}__gd{opt.scale}__fr_{opt.fix_reference}__steps{opt.steps}"
     # nowname = now + "_" + name
-    opt.outdir = f"{os.path.dirname(os.path.dirname(opt.checkpoint))}/{name}"
+    opt.outdir = "/data/xikunz/stable-diffusion/img_gen" if opt.checkpoint is None else f"{os.path.dirname(os.path.dirname(opt.checkpoint))}/{name}"
 
     config = OmegaConf.load(opt.config)
     # config = yaml.safe_load(data_config_yaml)
@@ -117,7 +117,8 @@ def main(opt):
     
     # Load the model checkpoint
     model = instantiate_from_config(config.model)
-    model.load_state_dict(torch.load(opt.checkpoint, map_location="cpu")["state_dict"],
+    if opt.checkpoint is not None:
+        model.load_state_dict(torch.load(opt.checkpoint, map_location="cpu")["state_dict"],
                           strict=False)
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")

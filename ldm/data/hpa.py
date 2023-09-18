@@ -2,9 +2,13 @@ import webdataset as wds
 from torch.utils.data import Dataset
 import cv2
 import albumentations
+import PIL
+from functools import partial
 import numpy as np
+import torchvision.transforms.functional as TF
 from PIL import Image
 from tqdm import tqdm, trange
+from ldm.modules.image_degradation import degradation_fn_bsr, degradation_fn_bsr_light
 import os
 import random
 import torch
@@ -181,38 +185,18 @@ class HPACombineDatasetMetadataInMemory():
         with open(cache_file, 'wb') as fp:
             pickle.dump(samples, fp)
 
-    def __init__(self, cache_file, seed=123, train_split_ratio=0.95, group='train', channels=None, include_location=False, include_densenet_embedding=False, return_info=False, filter_func=None, dump_to_file=None, rotate_and_flip=False, split_by_indexes=None, use_uniprot_embedding=False):
+    def __init__(self, cache_file, seed=123, train_split_ratio=0.95, group='train', channels=None, include_location=False, include_densenet_embedding=False, return_info=False, filter_func=None, dump_to_file=None, rotate_and_flip=False, split_by_indexes=None, use_uniprot_embedding=False, size=256):
         with open(f"{HPA_DATA_ROOT}/HPACombineDatasetInfo.pickle", 'rb') as fp:
             self.info_list = TorchSerializedList(pickle.load(fp))
         assert len(self.info_list) == TOTAL_LENGTH
 
-        # Load cache
-        # if cache_file in HPACombineDatasetMetadataInMemory.samples_dict:
-        #     self.samples = HPACombineDatasetMetadataInMemory.samples_dict[cache_file]
-        # else:
         assert group in ['train', 'validation']
         if self.cache_file is None:
             self.cache_file = cache_file
         else:
             assert self.cache_file == cache_file
-        # if group not in self.samples_dict:
-            # if os.path.exists(cache_file):
-            #     print(f"Loading data from cache file {cache_file}, this may take a while...")
-            #     start_time = time.time()
-            #     with open(cache_file, 'rb') as fp:
-            #         all_samples = pickle.load(fp)
-            #     time_span = time.time() - start_time
-            #     print(f"Cache loading is finished. Took {int(time_span)} s in total.")
-            # else:
-            #     raise Exception(f"Cache file not found {cache_file}")
-            # HPACombineDatasetMetadataInMemory.samples_dict[cache_file] = self.samples
 
         train_indexes, valid_indexes = self.filter_and_split(train_split_ratio, split_by_indexes, seed, filter_func)
-        #     all_samples = np.array(all_samples)
-        #     self.samples_dict["train"] = all_samples[train_indexes]
-        #     self.samples_dict["validation"] = all_samples[valid_indexes]
-        #     del all_samples
-        # self.samples = self.samples_dict[group]
         self.indexes = train_indexes if group == "train" else valid_indexes
 
         self.use_uniprot_embedding = use_uniprot_embedding
@@ -221,11 +205,6 @@ class HPACombineDatasetMetadataInMemory():
             all_densenet_avg_list = self.compute_avg_densenet_embeds(train_indexes, valid_indexes, include_densenet_embedding)
             assert len(all_densenet_avg_list) == TOTAL_LENGTH
             HPACombineDatasetMetadataInMemory.all_densenet_avg_list = TorchSerializedList(all_densenet_avg_list)
-            
-            # self.samples = [self.samples[idx] for idx in multi_avg_embeddings]
-            # if 'embed' in self.samples[0]:
-            #     for sample in self.samples:
-            #         del sample['embed']
         
         if dump_to_file:
             assert dump_to_file != cache_file, "please do not overwrite the cache file"
@@ -240,11 +219,11 @@ class HPACombineDatasetMetadataInMemory():
 
         self.include_location = include_location
         self.return_info = return_info
-        self.rotate_and_flip = rotate_and_flip
+        transforms = [albumentations.SmallestMaxSize(max_size=size)]
         if rotate_and_flip:
-            self.preprocessor = albumentations.Compose(
-                [albumentations.Rotate(limit=180, border_mode=cv2.BORDER_REFLECT_101, p=1.0, interpolation=cv2.INTER_NEAREST),
+            transforms.extend([albumentations.Rotate(limit=180, border_mode=cv2.BORDER_REFLECT_101, p=1.0, interpolation=cv2.INTER_NEAREST),
                 albumentations.HorizontalFlip(p=0.5)])
+        self.preprocessor = albumentations.Compose(transforms)
         print(f"Dataset group: {group}, length: {len(self.indexes)}, image channels: {channels or [0, 1, 2]}")
 
     def filter_and_split(self, train_split_ratio, split_by_indexes, seed, filter_func):
@@ -345,12 +324,11 @@ class HPACombineDatasetMetadataInMemory():
             locations_encoding = np.zeros((len(location_mapping), ), dtype=np.float32)
             locations_encoding[loc_labels] = 1
             sample["location_classes"] = locations_encoding
-        if self.rotate_and_flip:
-            # make sure the pixel values should be [0, 1], but the sample image is ranging from -1 to 1
-            transformed = self.preprocessor(image=(sample["image"]+1)/2, mask=(sample["ref-image"]+1)/2)
-            # restore the range from [0, 1] to [-1, 1]
-            sample["image"] = transformed["image"]*2 -1
-            sample["ref-image"] = transformed["mask"]*2 -1
+        # make sure the pixel values should be [0, 1], but the sample image is ranging from -1 to 1
+        transformed = self.preprocessor(image=(sample["image"]+1)/2, mask=(sample["ref-image"]+1)/2)
+        # restore the range from [0, 1] to [-1, 1]
+        sample["image"] = transformed["image"]*2 -1
+        sample["ref-image"] = transformed["mask"]*2 -1
         if self.return_info:
             sample["info"] = info
 
@@ -369,108 +347,108 @@ class HPACombineDatasetMetadataInMemory():
         return sample
 
 
-# class HPACombineDatasetSR(Dataset):
-#     def __init__(self, filename, size=None, length=80000, channels=None,
-#                  degradation=None, downscale_f=4, min_crop_f=0.5, max_crop_f=1.,
-#                  random_crop=True, protein_embedding="bert"):
-#         """
-#         Imagenet Superresolution Dataloader
-#         Performs following ops in order:
-#         1.  crops a crop of size s from image either as random or center crop
-#         2.  resizes crop to size with cv2.area_interpolation
-#         3.  degrades resized crop with degradation_fn
+class HPACombineDatasetSR(Dataset):
+    def __init__(self, filename, size=None, length=80000, channels=None,
+                 degradation=None, downscale_f=4, min_crop_f=0.5, max_crop_f=1.,
+                 random_crop=True, protein_embedding="bert"):
+        """
+        Imagenet Superresolution Dataloader
+        Performs following ops in order:
+        1.  crops a crop of size s from image either as random or center crop
+        2.  resizes crop to size with cv2.area_interpolation
+        3.  degrades resized crop with degradation_fn
 
-#         :param size: resizing to size after cropping
-#         :param degradation: degradation_fn, e.g. cv_bicubic or bsrgan_light
-#         :param downscale_f: Low Resolution Downsample factor
-#         :param min_crop_f: determines crop size s,
-#           where s = c * min_img_side_len with c sampled from interval (min_crop_f, max_crop_f)
-#         :param max_crop_f: ""
-#         :param data_root:
-#         :param random_crop:
-#         """
-#         if channels is None:
-#             self.channels = [0, 1, 2]
-#         else:
-#             self.channels = channels
-#         self.base = HPACombineDataset(filename, include_metadata=False, length=length, protein_embedding=protein_embedding)
-#         assert size
-#         assert (size / downscale_f).is_integer()
-#         self.size = size
-#         self.LR_size = int(size / downscale_f)
-#         self.min_crop_f = min_crop_f
-#         self.max_crop_f = max_crop_f
-#         assert(max_crop_f <= 1.)
-#         self.center_crop = not random_crop
+        :param size: resizing to size after cropping
+        :param degradation: degradation_fn, e.g. cv_bicubic or bsrgan_light
+        :param downscale_f: Low Resolution Downsample factor
+        :param min_crop_f: determines crop size s,
+          where s = c * min_img_side_len with c sampled from interval (min_crop_f, max_crop_f)
+        :param max_crop_f: ""
+        :param data_root:
+        :param random_crop:
+        """
+        if channels is None:
+            self.channels = [0, 1, 2]
+        else:
+            self.channels = channels
+        self.base = HPACombineDataset(filename, include_metadata=False, length=length, protein_embedding=protein_embedding)
+        assert size
+        assert (size / downscale_f).is_integer()
+        self.size = size
+        self.LR_size = int(size / downscale_f)
+        self.min_crop_f = min_crop_f
+        self.max_crop_f = max_crop_f
+        assert(max_crop_f <= 1.)
+        self.center_crop = not random_crop
 
-#         self.image_rescaler = albumentations.SmallestMaxSize(max_size=size, interpolation=cv2.INTER_AREA)
+        self.image_rescaler = albumentations.SmallestMaxSize(max_size=size, interpolation=cv2.INTER_AREA)
 
-#         self.pil_interpolation = False # gets reset later if incase interp_op is from pillow
+        self.pil_interpolation = False # gets reset later if incase interp_op is from pillow
 
-#         if degradation == "bsrgan":
-#             self.degradation_process = partial(degradation_fn_bsr, sf=downscale_f)
+        if degradation == "bsrgan":
+            self.degradation_process = partial(degradation_fn_bsr, sf=downscale_f)
 
-#         elif degradation == "bsrgan_light":
-#             self.degradation_process = partial(degradation_fn_bsr_light, sf=downscale_f)
+        elif degradation == "bsrgan_light":
+            self.degradation_process = partial(degradation_fn_bsr_light, sf=downscale_f)
 
-#         else:
-#             interpolation_fn = {
-#             "cv_nearest": cv2.INTER_NEAREST,
-#             "cv_bilinear": cv2.INTER_LINEAR,
-#             "cv_bicubic": cv2.INTER_CUBIC,
-#             "cv_area": cv2.INTER_AREA,
-#             "cv_lanczos": cv2.INTER_LANCZOS4,
-#             "pil_nearest": PIL.Image.NEAREST,
-#             "pil_bilinear": PIL.Image.BILINEAR,
-#             "pil_bicubic": PIL.Image.BICUBIC,
-#             "pil_box": PIL.Image.BOX,
-#             "pil_hamming": PIL.Image.HAMMING,
-#             "pil_lanczos": PIL.Image.LANCZOS,
-#             }[degradation]
+        else:
+            interpolation_fn = {
+            "cv_nearest": cv2.INTER_NEAREST,
+            "cv_bilinear": cv2.INTER_LINEAR,
+            "cv_bicubic": cv2.INTER_CUBIC,
+            "cv_area": cv2.INTER_AREA,
+            "cv_lanczos": cv2.INTER_LANCZOS4,
+            "pil_nearest": PIL.Image.NEAREST,
+            "pil_bilinear": PIL.Image.BILINEAR,
+            "pil_bicubic": PIL.Image.BICUBIC,
+            "pil_box": PIL.Image.BOX,
+            "pil_hamming": PIL.Image.HAMMING,
+            "pil_lanczos": PIL.Image.LANCZOS,
+            }[degradation]
             
 
-#             self.pil_interpolation = degradation.startswith("pil_")
+            self.pil_interpolation = degradation.startswith("pil_")
 
-#             if self.pil_interpolation:
-#                 self.degradation_process = partial(TF.resize, size=self.LR_size, interpolation=TF.InterpolationMode.NEAREST)
+            if self.pil_interpolation:
+                self.degradation_process = partial(TF.resize, size=self.LR_size, interpolation=TF.InterpolationMode.NEAREST)
 
-#             else:
-#                 self.degradation_process = albumentations.SmallestMaxSize(max_size=self.LR_size,
-#                                                                           interpolation=interpolation_fn)
+            else:
+                self.degradation_process = albumentations.SmallestMaxSize(max_size=self.LR_size,
+                                                                          interpolation=interpolation_fn)
 
-#     def __len__(self):
-#         return len(self.base)
+    def __len__(self):
+        return len(self.base)
 
-#     def __getitem__(self, i):
-#         example = self.base[i]
-#         image = example["image"]
-#         image = image[:, :, self.channels]
+    def __getitem__(self, i):
+        example = self.base[i]
+        image = example["image"]
+        image = image[:, :, self.channels]
 
-#         min_side_len = min(image.shape[:2])
-#         crop_side_len = min_side_len * np.random.uniform(self.min_crop_f, self.max_crop_f, size=None)
-#         crop_side_len = int(crop_side_len)
+        min_side_len = min(image.shape[:2])
+        crop_side_len = min_side_len * np.random.uniform(self.min_crop_f, self.max_crop_f, size=None)
+        crop_side_len = int(crop_side_len)
 
-#         if self.center_crop:
-#             self.cropper = albumentations.CenterCrop(height=crop_side_len, width=crop_side_len)
+        if self.center_crop:
+            self.cropper = albumentations.CenterCrop(height=crop_side_len, width=crop_side_len)
 
-#         else:
-#             self.cropper = albumentations.RandomCrop(height=crop_side_len, width=crop_side_len)
+        else:
+            self.cropper = albumentations.RandomCrop(height=crop_side_len, width=crop_side_len)
 
-#         image = self.cropper(image=image)["image"]
-#         image = self.image_rescaler(image=image)["image"]
+        image = self.cropper(image=image)["image"]
+        image = self.image_rescaler(image=image)["image"]
 
-#         if self.pil_interpolation:
-#             image_pil = PIL.Image.fromarray(image)
-#             LR_image = self.degradation_process(image_pil)
-#             LR_image = np.array(LR_image).astype(np.uint8)
+        if self.pil_interpolation:
+            image_pil = PIL.Image.fromarray(image)
+            LR_image = self.degradation_process(image_pil)
+            LR_image = np.array(LR_image).astype(np.uint8)
 
-#         else:
-#             LR_image = self.degradation_process(image=image)["image"]
+        else:
+            LR_image = self.degradation_process(image=image)["image"]
 
-#         example["image"] = (image/127.5 - 1.0).astype(np.float32)
-#         example["LR_image"] = (LR_image/127.5 - 1.0).astype(np.float32)
+        example["image"] = (image/127.5 - 1.0).astype(np.float32)
+        example["LR_image"] = (LR_image/127.5 - 1.0).astype(np.float32)
 
-#         return example
+        return example
     
 
 # class ClassEmbedder(nn.Module):
