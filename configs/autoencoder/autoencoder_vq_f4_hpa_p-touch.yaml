@@ -5,7 +5,7 @@ model:
     embed_dim: 3
     n_embed: 8192
     monitor: val/rec_loss
-    ckpt_path: null
+    # ckpt_path: models/first_stage_models/vq-f4/model.ckpt
 
     ddconfig:
       double_z: false
@@ -16,14 +16,11 @@ model:
       ch: 128
       ch_mult:
       - 1
-      # - 1
       - 2
-      # - 2
       - 4
       num_res_blocks: 2
-      attn_resolutions: [32]
+      attn_resolutions: []
       dropout: 0.0
-      attn_type: none
     lossconfig:
       target: ldm.modules.losses.vqperceptual.VQLPIPSWithDiscriminator
       params:
@@ -37,26 +34,24 @@ model:
 data:
   target: ldm.data.base.DataModuleFromConfig
   params:
-    batch_size: 1
+    batch_size: 8
     num_workers: 0 # disable multiprocessing
     wrap: True
     train:
       target: ldm.data.hpa.HPACombineDatasetSR
       params:
-        # filename: shard-{000000..000335}  # sample count: 716*336
-        filename: shard-000000 # sample count: 716*336
+        filename: shard-{000000..000335}  # sample count: 716*336
         channels: [1, 1, 1] # replace the green channel with ER
         length: 80000
-        size: 1024
+        size: 256
         degradation: pil_nearest
     validation:
       target: ldm.data.hpa.HPACombineDatasetSR  # sample count: 716*10
       params:
-        # filename: shard-{000335..000345}
-        filename: shard-000000
+        filename: shard-{000335..000345}
         channels: [1, 1, 1] # replace the green channel with ER
         length: 7160
-        size: 1024
+        size: 256
         degradation: pil_nearest
 
 lightning:

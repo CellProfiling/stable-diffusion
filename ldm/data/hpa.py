@@ -26,13 +26,14 @@ try:
    import cPickle as pickle
 except:
    import pickle
+import hickle as hkl
 
 from ldm.data.serialize import TorchSerializedList
 
 HPA_DATA_ROOT = os.environ.get("HPA_DATA_ROOT", "/data/wei/hpa-webdataset-all-composite")
 
 class HPACombineDataset(Dataset):
-    def __init__(self, filename, include_metadata=False, length=80000, protein_embedding="bert"):
+    def __init__(self, filename, include_metadata=False, protein_embedding="bert"):
         super().__init__()
         self.include_metadata = include_metadata
         assert not filename.endswith(".tar")
@@ -60,10 +61,10 @@ class HPACombineDataset(Dataset):
         
         self._generator = self.sample_generator()
             
-        self.length = length
+    #     self.length = length
 
-    def __len__(self):
-        return self.length
+    # def __len__(self):
+    #     return self.length
 
     def sample_generator(self):
         for ret in self.dataset_iter:
@@ -84,15 +85,16 @@ location_mapping = {"Actin filaments": 0, "Aggresome": 1, "Cell Junctions": 2, "
 cellline_mapping = {"A-431": 0, "A549": 1, "AF22": 2, "ASC TERT1": 3, "BJ": 4, "CACO-2": 5, "EFO-21": 6, "HAP1": 7, "HDLM-2": 8, "HEK 293": 9, "HEL": 10, "HTC": 11, "HUVEC TERT2": 12, "HaCaT": 13, "HeLa": 14, "Hep G2": 15, "JURKAT": 16, "K-562": 17, "LHCN-M2": 18, "MCF7": 19, "NB-4": 20, "NIH 3T3": 21, "OE19": 22, "PC-3": 23, "REH": 24, "RH-30": 25, "RPTEC TERT1": 26, "RT4": 27, "SH-SY5Y": 28, "SK-MEL-30": 29, "SiHa": 30, "SuSa": 31, "THP-1": 32, "U-2 OS": 33, "U-251 MG": 34, "Vero": 35, "hTCEpi": 36}
 
 class HPACombineDatasetMetadata():
-    def __init__(self, filename="webdataset", channels=None, include_metadata=True, return_info=False, size=None, length=80000, random_crop=False, protein_embedding="bert"):
+    def __init__(self, filename="webdataset", channels=None, include_metadata=True, return_info=False, size=None, random_crop=False, protein_embedding="bert"):
+        # random_crop=False
         self.size = size
         self.random_crop = random_crop
-        self.base = HPACombineDataset(filename, include_metadata=include_metadata, length=length, protein_embedding=protein_embedding)
+        self.base = HPACombineDataset(filename, include_metadata=include_metadata, protein_embedding=protein_embedding)
         if self.size is not None and self.size > 0:
             self.rescaler = albumentations.SmallestMaxSize(max_size = self.size)
-            if not self.random_crop:
+            if not self.random_crop: # <-
                 self.cropper = albumentations.CenterCrop(height=self.size,width=self.size)
-            else:
+            else: 
                 self.cropper = albumentations.RandomCrop(height=self.size,width=self.size)
             self.preprocessor = albumentations.Compose([self.rescaler, self.cropper])
         else:
@@ -182,8 +184,9 @@ class HPACombineDatasetMetadataInMemory():
         for idx in tqdm(range(total_length), total=total_length):
             sample = next(gen)
             samples.append(dataset.prepare_sample(sample))
-        with open(cache_file, 'wb') as fp:
-            pickle.dump(samples, fp)
+        # with open(cache_file, 'wb') as fp:
+        #     pickle.dump(samples, fp)
+        hkl.dump(samples, cache_file, mode='w')
 
     def __init__(self, cache_file, seed=123, train_split_ratio=0.95, group='train', channels=None, include_location=False, include_densenet_embedding=False, return_info=False, filter_func=None, dump_to_file=None, rotate_and_flip=False, split_by_indexes=None, use_uniprot_embedding=False, size=256):
         with open(f"{HPA_DATA_ROOT}/HPACombineDatasetInfo.pickle", 'rb') as fp:
@@ -245,7 +248,7 @@ class HPACombineDatasetMetadataInMemory():
             #     self.indexes = list(filter(lambda i: i in uniprot_indexes, self.indexes))
         else:
             assert train_split_ratio is None, "train_split_ratio should be None when split_by_indexes is used"
-            with open(split_by_indexes, "r") as in_file:
+            with open(f"{HPA_DATA_ROOT}/{split_by_indexes}", "r") as in_file:
                 idcs = json.load(in_file)
             train_indexes = idcs["train"]
             valid_indexes = idcs["validation"]
@@ -263,7 +266,7 @@ class HPACombineDatasetMetadataInMemory():
     def compute_avg_densenet_embeds(self, train_indexes, valid_indexes, include_densenet_embedding):
         # Load all densenet embeddings
         # if HPACombineDatasetMetadataInMemory.densenet_embeds is None:
-        with open("/data/wei/hpa-webdataset-all-composite/HPACombineDatasetInfo-densenet-features.pickle", "rb") as f:
+        with open(f"{HPA_DATA_ROOT}/HPACombineDatasetInfo-densenet-features.pickle", "rb") as f:
             densenet_embeds = pickle.load(f)
         assert densenet_embeds.shape == (TOTAL_LENGTH, 1024)
 
@@ -309,7 +312,7 @@ class HPACombineDatasetMetadataInMemory():
 
     def __getitem__(self, i):
         hpa_index = self.indexes[i]
-        sample = dd.io.load(self.cache_file, f'/data_0/data_{hpa_index}').copy()
+        sample = dd.io.load(f"{HPA_DATA_ROOT}/{self.cache_file}", f'/data_0/data_{hpa_index}').copy()
         sample = {"image": sample["'image'"]["data_0"], "ref-image": sample["'ref-image'"]["data_0"], "hpa_index": hpa_index}
         assert sample["ref-image"].min() == -1 and sample["ref-image"].max() <= 1
         assert sample["image"].min() == -1 and sample["image"].max() <= 1
@@ -352,10 +355,10 @@ class HPACombineDatasetSR(Dataset):
                  degradation=None, downscale_f=4, min_crop_f=0.5, max_crop_f=1.,
                  random_crop=True, protein_embedding="bert"):
         """
-        Imagenet Superresolution Dataloader
+        Superresolution Dataloader
         Performs following ops in order:
-        1.  crops a crop of size s from image either as random or center crop
-        2.  resizes crop to size with cv2.area_interpolation
+        1.  crops a crop of a random size (e.g. between 512 and 1024) from image either as random or center crop
+        2.  resizes crop to the target size (e.g. 256) with cv2.area_interpolation
         3.  degrades resized crop with degradation_fn
 
         :param size: resizing to size after cropping
@@ -367,6 +370,7 @@ class HPACombineDatasetSR(Dataset):
         :param data_root:
         :param random_crop:
         """
+        # size = 256, degradation = "pil_nearest", downscale_f=4, min_crop_f=0.5, max_crop_f=1., random_crop=True
         if channels is None:
             self.channels = [0, 1, 2]
         else:
@@ -381,7 +385,7 @@ class HPACombineDatasetSR(Dataset):
         assert(max_crop_f <= 1.)
         self.center_crop = not random_crop
 
-        self.image_rescaler = albumentations.SmallestMaxSize(max_size=size, interpolation=cv2.INTER_AREA)
+        self.image_rescaler = albumentations.SmallestMaxSize(max_size=size, interpolation=cv2.INTER_AREA) # FIXME: We use cv2.INTER_LINEAR (default option) for HPACombineDatasetMetadata but use cv2.INTER_AREA for HPACombineDatasetSR.
 
         self.pil_interpolation = False # gets reset later if incase interp_op is from pillow
 
@@ -391,7 +395,7 @@ class HPACombineDatasetSR(Dataset):
         elif degradation == "bsrgan_light":
             self.degradation_process = partial(degradation_fn_bsr_light, sf=downscale_f)
 
-        else:
+        else: # <-
             interpolation_fn = {
             "cv_nearest": cv2.INTER_NEAREST,
             "cv_bilinear": cv2.INTER_LINEAR,
@@ -437,7 +441,7 @@ class HPACombineDatasetSR(Dataset):
         image = self.cropper(image=image)["image"]
         image = self.image_rescaler(image=image)["image"]
 
-        if self.pil_interpolation:
+        if self.pil_interpolation: # <-
             image_pil = PIL.Image.fromarray(image)
             LR_image = self.degradation_process(image_pil)
             LR_image = np.array(LR_image).astype(np.uint8)
@@ -564,5 +568,6 @@ if __name__ == "__main__":
     #     filter_func="has_location", dump_to_file=f"{HPA_DATA_ROOT}/HPACombineDatasetMetadataInMemory-256-has-location.pickle")
     # HPACombineDatasetMetadataInMemory.generate_cache(f"{HPA_DATA_ROOT}/HPACombineDatasetMetadataInMemory-256-1000.pickle", size=256, total_length=1000)
     # HPACombineDatasetMetadataInMemory.generate_cache(f"{HPA_DATA_ROOT}/HPACombineDatasetMetadataInMemory-256-1000-t5.pickle", size=256, total_length=1000, protein_embedding="t5")
-    HPACombineDatasetMetadataInMemory.generate_cache(f"{HPA_DATA_ROOT}/HPACombineDatasetMetadataInMemory-256-t5.pickle", size=256, protein_embedding="t5")
+    # HPACombineDatasetMetadataInMemory.generate_cache(f"{HPA_DATA_ROOT}/HPACombineDatasetMetadataInMemory-256-t5.pickle", size=256, protein_embedding="t5")
+    HPACombineDatasetMetadataInMemory.generate_cache(f"{HPA_DATA_ROOT}/HPACombineDatasetMetadataInMemory-1024-t5.h5", size=1024, total_length=1000, protein_embedding="t5")
     # dump_info(f"{HPA_DATA_ROOT}/HPACombineDatasetInfo.pickle")

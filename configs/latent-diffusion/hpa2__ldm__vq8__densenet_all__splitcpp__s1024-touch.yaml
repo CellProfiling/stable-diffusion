@@ -11,7 +11,7 @@ model:
     loss_type: l1
     first_stage_key: "image"
     cond_stage_key: "hybrid-conditions" # the key in the dataset for feeding into the condition model
-    image_size: 256
+    image_size: 128
     channels: 3
     cond_stage_trainable: true
     concat_mode: false # this will set conditioning_key to "crossattn" if not exists
@@ -64,11 +64,11 @@ model:
           ch_mult:
           - 1
           # - 1
-          # - 2
+          - 2
           - 2
           - 4
           num_res_blocks: 2
-          attn_resolutions: []
+          attn_resolutions: [32]
           dropout: 0.0
           attn_type: none
         lossconfig:
@@ -100,11 +100,11 @@ model:
               ch_mult:
               - 1
               # - 1
-              # - 2
+              - 2
               - 2
               - 4
               num_res_blocks: 2
-              attn_resolutions: []
+              attn_resolutions: [32]
               dropout: 0.0
               attn_type: none
             lossconfig:
@@ -131,35 +131,23 @@ data:
     #     length: 1000
     #     channels: [0, 1, 2]
     train:
-      target: ldm.data.hpa.HPACombineDatasetMetadataInMemory
+      target: ldm.data.hpa2.HPA
       params:
-        seed: 123
         group: 'train'
-        train_split_ratio: null
         include_densenet_embedding: all
-        # cache_file: /data/xikunz/hpa-webdataset-all-composite/HPACombineDatasetMetadataInMemory-256-t5.h5
-        cache_file: HPACombineDatasetMetadataInMemory-256-t5.h5
         channels: [1, 1, 1]
         filter_func: has_location
         rotate_and_flip: true
         include_location: true
-        # split_by_indexes: /data/wei/hpa-webdataset-all-composite/stage1_data_split_flt4.json
-        split_by_indexes: stage1_data_split_flt4.json
         size: 1024
     validation:
-      target: ldm.data.hpa.HPACombineDatasetMetadataInMemory
+      target: ldm.data.hpa2.HPA
       params:
-        seed: 123
         group: 'validation'
-        train_split_ratio: null
         include_densenet_embedding: all
-        # cache_file: /data/xikunz/hpa-webdataset-all-composite/HPACombineDatasetMetadataInMemory-256-t5.h5
-        cache_file: HPACombineDatasetMetadataInMemory-256-t5.h5
         channels: [1, 1, 1]
         filter_func: has_location
         include_location: true
-        # split_by_indexes: /data/wei/hpa-webdataset-all-composite/stage1_data_split_flt4.json
-        split_by_indexes: stage1_data_split_flt4.json
         size: 1024
 lightning:
   callbacks:

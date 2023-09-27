@@ -18,7 +18,7 @@ model:
       - 1
       # - 1
       - 2
-      # - 2
+      - 2
       - 4
       num_res_blocks: 2
       attn_resolutions: [32]
@@ -41,23 +41,15 @@ data:
     num_workers: 0 # disable multiprocessing
     wrap: True
     train:
-      target: ldm.data.hpa.HPACombineDatasetSR
+      target: ldm.data.hpa2.HPA
       params:
-        # filename: shard-{000000..000335}  # sample count: 716*336
-        filename: shard-000000 # sample count: 716*336
         channels: [1, 1, 1] # replace the green channel with ER
-        length: 80000
         size: 1024
-        degradation: pil_nearest
     validation:
-      target: ldm.data.hpa.HPACombineDatasetSR  # sample count: 716*10
+      target: ldm.data.hpa2.HPA  # sample count: 716*10
       params:
-        # filename: shard-{000335..000345}
-        filename: shard-000000
         channels: [1, 1, 1] # replace the green channel with ER
-        length: 7160
         size: 1024
-        degradation: pil_nearest
 
 lightning:
   callbacks:
