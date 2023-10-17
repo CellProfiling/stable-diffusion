@@ -1,26 +1,14 @@
-import webdataset as wds
-from torch.utils.data import Dataset
 import cv2
 import albumentations
-import PIL
-from functools import partial
 import numpy as np
-import torchvision.transforms.functional as TF
 from PIL import Image
 from tqdm import tqdm, trange
-from ldm.modules.image_degradation import degradation_fn_bsr, degradation_fn_bsr_light
 import os
-import random
-import torch
-import torch.nn as nn
-from einops import rearrange
-from ldm.util import instantiate_from_config
-from torchvision.utils import make_grid
 import json
 import h5py
-import deepdish as dd
 import warnings
 warnings.filterwarnings("ignore")
+import pandas as pd
 
 try:
    import cPickle as pickle
@@ -45,10 +33,13 @@ class HPA:
             self.info_list = TorchSerializedList(pickle.load(fp))
         assert len(self.info_list) == TOTAL_LENGTH
 
+        self.cell_centers_df = pd.read_csv(f"{HPA_DATA_ROOT}/cell_centers.csv")
+
         assert group in ['train', 'validation']
 
         train_indexes, valid_indexes = self.filter_and_split(filter_func)
         self.indexes = train_indexes if group == "train" else valid_indexes
+        self.cell_centers_df = self.cell_centers_df[self.cell_centers_df['hpa_index'].isin(self.indexes)]
 
         self.use_uniprot_embedding = use_uniprot_embedding
         assert include_densenet_embedding in ["all", "flt", False]
@@ -65,12 +56,16 @@ class HPA:
 
         self.include_location = include_location
         self.return_info = return_info
+        self.crop = crop
+        self.size = size
         if crop == "None":
             transforms = [albumentations.SmallestMaxSize(max_size=size)]
         elif crop == "random":
             transforms = [albumentations.RandomCrop(height=size, width=size)]
         elif crop == "center":
             transforms = [albumentations.CenterCrop(height=size, width=size)]
+        elif crop == "cells":
+            transforms = []
         else:
             raise NotImplementedError(f"crop {crop} not implemented")
         if rotate_and_flip:
@@ -138,22 +133,71 @@ class HPA:
 
         return densent_features_avg
 
+    def crop_and_pad(self, img, center_y, center_x, size):
+        """
+        Crop a square region from the image and pad with zeros if necessary.
+
+        Parameters:
+        - img: numpy array representing the image.
+        - center_y: y-coordinate for the center of the crop.
+        - center_x: x-coordinate for the center of the crop.
+        - size: Side length of the square crop.
+
+        Returns:
+        - Cropped and possibly padded image.
+        """
+        
+        h, w = img.shape[:2]
+        half_size = size // 2
+        
+        top = max(0, center_y - half_size)
+        left = max(0, center_x - half_size)
+        bottom = min(h, center_y + half_size)
+        right = min(w, center_x + half_size)
+
+        # Cropping
+        cropped = img[top:bottom, left:right]
+
+        # Padding
+        pad_top = abs(min(0, center_y - half_size))
+        pad_bottom = abs(h - max(h, center_y + half_size))
+        pad_left = abs(min(0, center_x - half_size))
+        pad_right = abs(w - max(w, center_x + half_size))
+
+        result = np.pad(cropped, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), 'constant', constant_values=0)
+        return result
+
     def __len__(self):
-        return len(self.indexes)
+        return len(self.cell_centers_df) if self.crop == "cells" else len(self.indexes)
 
     def __getitem__(self, i):
-        hpa_index = self.indexes[i]
+        if self.crop == "cells":
+            cell = self.cell_centers_df.iloc[i]
+            com_y, com_x, hpa_index = cell[["com_y", "com_x", "hpa_index"]]
+        else:
+            hpa_index = self.indexes[i]
+        info = self.info_list[hpa_index]
+        plate_id = info["if_plate_id"]
+        position = info["position"]
+        sample = info["sample"]
+        image_id = str(plate_id) + "_" + str(position) + "_" + str(sample)
         # sample = dd.io.load(self.cache_file, f'/data_0/data_{hpa_index}').copy()
-        im = Image.open(f'{HPA_DATA_ROOT}/images2/{hpa_index}.tif')
+        im = Image.open(f'{HPA_DATA_ROOT}/images2/{image_id}.tif')
         imarray = np.array(im)
         assert imarray.shape == (1024, 1024, 4)
+        
+        if self.crop == "cells":
+            # Crop the image to the cell and pad with zeros if the borders are out of the image
+            imarray = self.crop_and_pad(imarray, int(com_y), int(com_x), self.size)
+
         imarray = (imarray / 127.5 - 1.0).astype(np.float32) # Convert image to [-1, 1]
         image = imarray[:, :, self.channels]
         ref = imarray[:, :, [0, 3, 2]] # reference channels: MT, ER, DAPI
         assert ref.min() == -1 and ref.max() <= 1
-        assert image.min() == -1 and image.max() <= 1
+        assert image.min() >= -1
+        assert image.min() < 0
+        assert image.max() <= 1
         sample = {"image": image, "ref-image": ref, "hpa_index": hpa_index}
-        info = self.info_list[hpa_index]
         sample["condition_caption"] = f"{info['gene_names']}/{info['atlas_name']}"
         sample["location_caption"] = f"{info['locations']}"
         if self.include_location:

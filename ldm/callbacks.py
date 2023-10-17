@@ -110,7 +110,7 @@ class ImageLogger(Callback):
     def _wandb(self, pl_module, images, samples, targets, batch_idx, split):
         print(f"Process {os.getpid()} in _wandb()")
         for k in images:
-            grid = (images[k] + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
+            grid = images[k]
             image = wandb.Image(grid)
 
             tag = f"{split}/batch{batch_idx}_{k}"
@@ -127,12 +127,7 @@ class ImageLogger(Callback):
                   global_step, current_epoch, batch_idx):
         root = os.path.join(save_dir, "images", split)
         for k in images:
-            grid = torchvision.utils.make_grid(images[k], nrow=4)
-            if self.rescale:
-                grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
-            grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
-            grid = grid.numpy()
-            grid = (grid * 255).astype(np.uint8)
+            grid = images[k]
             filename = "{}_gs-{:06}_e-{:06}_b-{:06}.png".format(
                 k,
                 global_step,
@@ -164,6 +159,13 @@ class ImageLogger(Callback):
                     images[k] = images[k].detach().cpu()
                     if self.clamp:
                         images[k] = torch.clamp(images[k], -1., 1.)
+                grid = torchvision.utils.make_grid(images[k], nrow=4) # nrow actually means number of columns
+                if self.rescale:
+                    grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
+                grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
+                grid = grid.numpy()
+                grid = (grid * 255).astype(np.uint8)
+                images[k] = grid
 
             self.log_local(pl_module.logger.save_dir, split, images,
                            pl_module.global_step, pl_module.current_epoch, batch_idx)

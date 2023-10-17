@@ -1,0 +1,72 @@
+model:
+  base_learning_rate: 4.5e-06
+  target: ldm.models.autoencoder.VQModel
+  params:
+    embed_dim: 3
+    n_embed: 8192
+    monitor: val/rec_loss
+    # ckpt_path: models/first_stage_models/vq-f4/model.ckpt
+
+    ddconfig:
+      double_z: false
+      z_channels: 3
+      resolution: 256
+      in_channels: 3
+      out_ch: 3
+      ch: 128
+      ch_mult:
+      - 1
+      - 2
+      - 4
+      num_res_blocks: 2
+      attn_resolutions: []
+      dropout: 0.0
+    lossconfig:
+      target: ldm.modules.losses.vqperceptual.VQLPIPSWithDiscriminator
+      params:
+        disc_conditional: false
+        disc_in_channels: 3
+        disc_start: 0
+        disc_weight: 0.75
+        codebook_weight: 1.0
+        n_classes: 8192
+
+data:
+  target: ldm.data.base.DataModuleFromConfig
+  params:
+    batch_size: 16
+    num_workers: 1
+    wrap: True
+    shuffle_val_dataloader: True
+    train:
+      target: ldm.data.hpa2.HPA
+      params:
+        channels: [1, 1, 1] # replace the green channel with ER
+        size: 256
+        crop: cells
+    validation:
+      target: ldm.data.hpa2.HPA  # sample count: 716*10
+      params:
+        channels: [1, 1, 1] # replace the green channel with ER
+        size: 256
+        crop: cells
+
+lightning:
+  callbacks:
+    image_logger:
+      target: ldm.callbacks.ImageLogger
+      params:
+        batch_frequency: 1000
+        log_validation: true
+        val_batch_frequency: 1000
+        max_images: 8
+        increase_log_steps: false
+        log_first_step: true
+        log_on_batch_idx: true
+
+  trainer:
+    benchmark: True
+    accumulate_grad_batches: 2
+    limit_train_batches: 4000
+    limit_val_batches: 200
+    val_check_interval: 1.0

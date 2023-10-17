@@ -40,6 +40,7 @@ def main(opt, logdir, nowname):
         del trainer_config["accelerator"]
         cpu = True
     else:
+        assert "," in trainer_config["gpus"], "Please specify GPUs as comma-separated list."
         gpuinfo = trainer_config["gpus"]
         print(f"Running on GPUs {gpuinfo}")
         cpu = False
@@ -64,8 +65,8 @@ def main(opt, logdir, nowname):
             "params": {
                 "name": nowname,
                 "save_dir": logdir,
-                "offline": opt.debug,
-                # "offline": False,
+                # "offline": opt.debug,
+                "offline": False,
                 "id": nowname,
                 "project": "super-multiplex-cell",
                 "config": config_to_log,

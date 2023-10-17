@@ -516,6 +516,7 @@ class HPAClassEmbedder(nn.Module):
         return {"c_crossattn": embed}
 
     def decode(self, c):
+        assert self.include_ref_image
         condition_row = c['c_concat']
         assert len(condition_row) == 1
         with torch.no_grad():

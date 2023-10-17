@@ -677,8 +677,8 @@ class LatentDiffusion(DDPM):
         encoder_posterior = self.encode_first_stage(x)
         z = self.get_first_stage_encoding(encoder_posterior).detach()
 
-        if self.model.conditioning_key is not None:
-            if cond_key is None:
+        if self.model.conditioning_key is not None: # self.model.conditioning_key == "hybrid"
+            if cond_key is None: # cond_key == None, self.cond_stage_key == 'hybrid-conditions'
                 cond_key = self.cond_stage_key
             if cond_key != self.first_stage_key:
                 if cond_key in ['caption', 'coordinates_bbox']:
@@ -895,8 +895,8 @@ class LatentDiffusion(DDPM):
         t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
         if self.model.conditioning_key is not None:
             assert c is not None
-            if self.cond_stage_trainable:
-                c = self.get_learned_conditioning(c)
+            if self.cond_stage_trainable: # self.cond_stage_trainable == True
+                c = self.get_learned_conditioning(c) # <-
             if self.shorten_cond_schedule:  # TODO: drop this option
                 tc = self.cond_ids[t].to(self.device)
                 c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
@@ -1273,8 +1273,7 @@ class LatentDiffusion(DDPM):
         if ddim:
             ddim_sampler = DDIMSampler(self)
             shape = (self.channels, self.image_size, self.image_size)
-            samples, intermediates =ddim_sampler.sample(ddim_steps,batch_size,
-                                                        shape,cond,verbose=False,**kwargs)
+            samples, intermediates =ddim_sampler.sample(ddim_steps,batch_size, shape,cond,verbose=False,**kwargs)
 
         else:
             samples, intermediates = self.sample(cond=cond, batch_size=batch_size,
@@ -1289,16 +1288,16 @@ class LatentDiffusion(DDPM):
                    plot_diffusion_rows=True, mix_sample=False, plot_inputs=False, plot_reconstructions=False, **kwargs):
 
         use_ddim = ddim_steps is not None
-
+        batch_size = batch["image"].shape[0]
         log = dict()
-        z, c, x, xrec, xc = self.get_input(batch, self.first_stage_key,
-                                           return_first_stage_outputs=True,
-                                           force_c_encode=True,
-                                           return_original_cond=True,
-                                           bs=N)
-        N = min(x.shape[0], N)
-        n_row = min(x.shape[0], n_row)
-        targets_grid = make_grid(x, nrow=1)
+        z, c, x, xrec, xc = self.get_input(batch, self.first_stage_key, return_first_stage_outputs=True, force_c_encode=True, return_original_cond=True, bs=batch_size)
+        # c: {"c_concat": [a tensor of size(bs, 1024)], "c_crossattn": [a tensor of size(bs, 3, 64, 64)]}
+        # x.size(): [bs, 3, 256, 256]
+        # xrec.size(): [bs, 3, 256, 256]
+        # xc == batch
+        N = min(batch_size, N)
+        # n_row = min(x.shape[0], n_row)
+        targets_grid = make_grid(x[:N], nrow=1)
 
         # "Inputs" here actually mean the target images
         if plot_inputs:
@@ -1309,13 +1308,12 @@ class LatentDiffusion(DDPM):
 
         conditions_grid = None
         if self.model.conditioning_key is not None:
-            if hasattr(self.cond_stage_model, "decode"):
-                xc = self.cond_stage_model.decode(c)
+            if self.cond_stage_key == "hybrid-conditions":
+                xc = rearrange(batch["ref-image"][:N], 'b h w c -> b c h w') # <-
                 if "condition_caption" in batch:
-                    caption_image = (1 - make_grid(log_txt_as_img((x.shape[2], x.shape[3]), batch["condition_caption"][:N], size=12), nrow=1)).to(xc.get_device())
-                    conditions_grid = torch.clip(xc + caption_image, -1.0, 1.0)
-                else:
-                    conditions_grid = xc
+                    caption_image = (1 - log_txt_as_img((x.shape[2], x.shape[3]), batch["condition_caption"][:N], size=12)).to(xc.get_device()) # <-
+                    xc = torch.clip(xc + caption_image, -1.0, 1.0)
+                conditions_grid = make_grid(xc, nrow=1)
             elif self.cond_stage_key in ["caption"]:
                 xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["caption"])
                 conditions_grid = xc
@@ -1370,13 +1368,10 @@ class LatentDiffusion(DDPM):
 
             # get denoise row
             with self.ema_scope("Plotting"):
-                samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,
-                                                         unconditional_guidance_scale=unconditional_guidance_scale,
-                                                         unconditional_conditioning=uc,
-                                                         ddim_steps=ddim_steps,eta=ddim_eta, log_every_t=20)
+                samples, z_denoise_row = self.sample_log(cond=c,batch_size=batch_size,ddim=use_ddim, unconditional_guidance_scale=unconditional_guidance_scale, unconditional_conditioning=uc, ddim_steps=ddim_steps,eta=ddim_eta, log_every_t=20)
                 # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True)
             x_samples = self.decode_first_stage(samples)
-            samples_grid = make_grid(x_samples, nrow=1)
+            samples_grid = make_grid(x_samples[:N], nrow=1)
 
             if mix_sample:
                 assert xc.shape == samples_grid.shape
@@ -1397,9 +1392,7 @@ class LatentDiffusion(DDPM):
                     self.first_stage_model, IdentityFirstStage):
                 # also display when quantizing x0 while sampling
                 with self.ema_scope("Plotting Quantized Denoised"):
-                    samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,
-                                                             ddim_steps=ddim_steps,eta=ddim_eta,
-                                                             quantize_denoised=True)
+                    samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim, ddim_steps=ddim_steps,eta=ddim_eta, quantize_denoised=True)
                     # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True,
                     #                                      quantize_denoised=True)
                 x_samples = self.decode_first_stage(samples.to(self.device))

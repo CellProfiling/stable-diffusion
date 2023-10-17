@@ -234,7 +234,7 @@ class VQModel(pl.LightningModule):
     def get_last_layer(self):
         return self.decoder.conv_out.weight
 
-    def log_images(self, batch, only_inputs=False, plot_ema=False, **kwargs):
+    def gen_images(self, batch, only_inputs=False, plot_ema=False, **kwargs):
         log = dict()
         x = self.get_input(batch, self.image_key)
         x = x.to(self.device)
@@ -254,7 +254,7 @@ class VQModel(pl.LightningModule):
                 xrec_ema, _ = self(x)
                 if x.shape[1] > 3: xrec_ema = self.to_rgb(xrec_ema)
                 log["reconstructions_ema"] = xrec_ema
-        return log
+        return log, x, xrec
 
     def to_rgb(self, x):
         assert self.image_key == "segmentation"
@@ -402,7 +402,7 @@ class AutoencoderKL(pl.LightningModule):
         return self.decoder.conv_out.weight
 
     @torch.no_grad()
-    def log_images(self, batch, only_inputs=False, **kwargs):
+    def gen_images(self, batch, only_inputs=False, **kwargs):
         log = dict()
         x = self.get_input(batch, self.image_key)
         x = x.to(self.device)
