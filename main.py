@@ -65,8 +65,8 @@ def main(opt, logdir, nowname):
             "params": {
                 "name": nowname,
                 "save_dir": logdir,
-                # "offline": opt.debug,
-                "offline": False,
+                "offline": opt.debug,
+                # "offline": False,
                 "id": nowname,
                 "project": "super-multiplex-cell",
                 "config": config_to_log,

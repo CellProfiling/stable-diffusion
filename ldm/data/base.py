@@ -93,9 +93,9 @@ class DataModuleFromConfig(pl.LightningDataModule):
                 self.datasets[k] = WrappedDataset(self.datasets[k])
 
     def _train_dataloader(self):
-        is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
-        if is_iterable_dataset or self.use_worker_init_fn:
-            init_fn = worker_init_fn
+        is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset) # False
+        if is_iterable_dataset or self.use_worker_init_fn: # self.use_worker_init_fn == True
+            init_fn = worker_init_fn # <-
         else:
             init_fn = None
         return DataLoader(self.datasets["train"], batch_size=self.batch_size,

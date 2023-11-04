@@ -23,6 +23,8 @@ TOTAL_LENGTH = 247678
 
 location_mapping = {"Actin filaments": 0, "Aggresome": 1, "Cell Junctions": 2, "Centriolar satellite": 3, "Centrosome": 4, "Cytokinetic bridge": 5, "Cytoplasmic bodies": 6, "Cytosol": 7, "Endoplasmic reticulum": 8, "Endosomes": 9, "Focal adhesion sites": 10, "Golgi apparatus": 11, "Intermediate filaments": 12, "Lipid droplets": 13, "Lysosomes": 14, "Microtubule ends": 15, "Microtubules": 16, "Midbody": 17, "Midbody ring": 18, "Mitochondria": 19, "Mitotic chromosome": 20, "Mitotic spindle": 21, "Nuclear bodies": 22, "Nuclear membrane": 23, "Nuclear speckles": 24, "Nucleoli": 25, "Nucleoli fibrillar center": 26, "Nucleoplasm": 27, "Peroxisomes": 28, "Plasma membrane": 29, "Rods & Rings": 30, "Vesicles": 31, "nan": 32}
 
+matched_location_mapping = {"Actin filaments": 9, "Aggresome": 15, "Centriolar satellite": 12, "Centrosome": 12, "Cytoplasmic bodies": 17, "Cytosol": 16, "Endoplasmic reticulum": 6, "Endosomes": 17, "Focal adhesion sites": 9, "Golgi apparatus": 7, "Intermediate filaments": 8, "Lipid droplets": 17, "Lysosomes": 17, "Microtubules": 10, "Mitochondria": 14, "Mitotic spindle": 11, "Nuclear bodies": 5, "Nuclear membrane": 1, "Nuclear speckles": 4, "Nucleoli": 2, "Nucleoli fibrillar center": 3, "Nucleoplasm": 0, "Peroxisomes": 17, "Plasma membrane": 13, "Vesicles": 17, "nan": 18}
+
 
 class HPA:
 
@@ -167,6 +169,13 @@ class HPA:
         result = np.pad(cropped, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), 'constant', constant_values=0)
         return result
 
+    def one_hot_encode_locations(self, locations, location_mapping):
+        loc_labels = list(map(lambda n: location_mapping[n] if n in location_mapping else -1, str(locations).split(',')))
+        # create one-hot encoding for the labels
+        locations_encoding = np.zeros((max(location_mapping.values()) + 1, ), dtype=np.float32)
+        locations_encoding[loc_labels] = 1
+        return locations_encoding
+
     def __len__(self):
         return len(self.cell_centers_df) if self.crop == "cells" else len(self.indexes)
 
@@ -201,11 +210,8 @@ class HPA:
         sample["condition_caption"] = f"{info['gene_names']}/{info['atlas_name']}"
         sample["location_caption"] = f"{info['locations']}"
         if self.include_location:
-            loc_labels = list(map(lambda n: location_mapping[n] if n in location_mapping else -1, str(info["locations"]).split(',')))
-            # create one-hot encoding for the labels
-            locations_encoding = np.zeros((len(location_mapping), ), dtype=np.float32)
-            locations_encoding[loc_labels] = 1
-            sample["location_classes"] = locations_encoding
+            sample["location_classes"] = self.one_hot_encode_locations(info["locations"], location_mapping)
+        sample["matched_location_classes"] = self.one_hot_encode_locations(info["locations"], matched_location_mapping)
         # make sure the pixel values should be [0, 1], but the sample image is ranging from -1 to 1
         transformed = self.preprocessor(image=(sample["image"]+1)/2, mask=(sample["ref-image"]+1)/2)
         # restore the range from [0, 1] to [-1, 1]

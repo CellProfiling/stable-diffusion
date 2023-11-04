@@ -113,8 +113,8 @@ model:
 data:
   target: ldm.data.base.DataModuleFromConfig
   params:
-    batch_size: 16 # We can use a maximum batch size of 8 on a single GPU; doesn't need to change this when using different numbers of GPUs
-    num_workers: 1 # Number of dataloader subprocesses per GPU process (if using DDP); set it to 1 or 2 in this case
+    batch_size: 8 # We can use a maximum batch size of 8 on a single GPU; doesn't need to change this when using different numbers of GPUs
+    num_workers: 0 # Number of dataloader subprocesses per GPU process (if using DDP); set it to 1 or 2 in this case
     wrap: False
     use_worker_init_fn: true
     shuffle_val_dataloader: true
@@ -126,7 +126,7 @@ data:
         channels: [1, 1, 1]
         filter_func: has_location
         rotate_and_flip: true
-        include_location: true
+        include_location: false
         size: 256
         crop: cells
         return_info: true
@@ -137,7 +137,7 @@ data:
         include_densenet_embedding: all
         channels: [1, 1, 1]
         filter_func: has_location
-        include_location: true
+        include_location: false
         size: 256
         crop: cells
         return_info: true

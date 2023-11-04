@@ -8,19 +8,21 @@ from omegaconf import OmegaConf
 from PIL import Image
 from tqdm import tqdm
 import numpy as np
+from sklearn.metrics import average_precision_score
 import torch
 from main import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.parse import str2bool
 from ldm.util import instantiate_from_config
 from ldm.evaluation.metrics import calc_metrics
+from ldm.models.sc_loc_classifier.cls_inception_v3 import load_model
 # import yaml
 import matplotlib 
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
 
 """
-Command example: CUDA_VISIBLE_DEVICES=0 python scripts/prot2img.py --config=configs/latent-diffusion/hpa-ldm-vq-4-hybrid-protein-location-augmentation.yaml --checkpoint=logs/2023-04-07T01-25-41_hpa-ldm-vq-4-hybrid-protein-location-augmentation/checkpoints/last.ckpt --scale=2 --outdir=./data/22-fixed --fix-reference
+Command example: CUDA_VISIBLE_DEVICES=0 python scripts/img_gen/prot2img.py --config=configs/latent-diffusion/hpa2__ldm__vq4__densenet_all__splitcpp__cell256-debug.yaml --checkpoint=/scratch/users/xikunz2/stable-diffusion/logs/2023-10-15T10-18-18_hpa2__ldm__vq4__densenet_all__splitcpp__cell256/checkpoints/last.ckpt --scale=2 -d
 
 """
 
@@ -87,7 +89,7 @@ Command example: CUDA_VISIBLE_DEVICES=0 python scripts/prot2img.py --config=conf
 
 def main(opt):
     # now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    split = "validation"
+    split = "train"
     if opt.name:
         name = opt.name
     else:
@@ -124,6 +126,7 @@ def main(opt):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
     sampler = DDIMSampler(model)
+    loc_clf = load_model(device)
 
     # Create a mapping from protein to all its possible locations
     if opt.fix_reference:
@@ -137,19 +140,18 @@ def main(opt):
 
     ref = None
     os.makedirs(opt.outdir, exist_ok=True)
-    total_count = len(data.datasets[split])
-    count = 0
-    debug_count = 14 if opt.fix_reference else 8
+    total_count = 8 if opt.debug else len(data.datasets[split])
+    idcs = np.random.choice(len(data.datasets[split]), total_count, replace=False)
     ref_images, predicted_images, gt_images = [], [], []
     locations, filenames, conditions = [], [], []
-    mse_list, ssim_list = [], []
+    mse_list, ssim_list, feats_mse_list, samples_loc_probs_list, sc_gt_locations_list = [[] for _ in range(5)]
     with torch.no_grad():
         with model.ema_scope():
-            for i, sample in tqdm(enumerate(data.datasets[split]), total=total_count):
-                if i % 3 != 0:
-                    continue
-            # for image, mask in tqdm(zip(images, masks)):
-                # print(d['info']['Ab state'], d['info']['locations'], d['location_classes'])
+            for i in tqdm(idcs):
+            # for i, sample in tqdm(enumerate(data.datasets[split]), total=total_count):
+            #     if i % 3 != 0:
+            #         continue
+                sample = data.datasets[split][i]
                 sample = {k: torch.from_numpy(np.expand_dims(sample[k], axis=0)).to(device) if isinstance(sample[k], (np.ndarray, np.generic)) else sample[k] for k in sample.keys()}
                 name = sample['info']['filename'].split('/')[-1]
                 if opt.fix_reference:
@@ -176,9 +178,13 @@ def main(opt):
                                                  verbose=False)
                 x_samples_ddim = model.decode_first_stage(samples_ddim)
 
-                mse, ssim = calc_metrics(x_samples_ddim, torch.permute(sample['image'], (0, 3, 1, 2)))
-                mse_list.append(mse)
-                ssim_list.append(ssim)
+                gt_locations = sample["matched_location_classes"]
+                mse, ssim, feats_mse, samples_loc_probs, sc_gt_locations = calc_metrics(samples=x_samples_ddim, targets=torch.permute(sample['image'], (0, 3, 1, 2)), refs=torch.permute(ref, (0, 3, 1, 2)), clf=loc_clf, gt_locations=gt_locations)
+                mse_list.append(mse[0])
+                ssim_list.append(ssim[0])
+                feats_mse_list.append(feats_mse[0])
+                samples_loc_probs_list.append(samples_loc_probs[0])
+                sc_gt_locations_list.append(sc_gt_locations[0])
 
                 prot_image = torch.clamp((sample['image']+1.0)/2.0,
                                     min=0.0, max=1.0)
@@ -232,9 +238,9 @@ def main(opt):
                 filenames.append(name)
                 conditions.append(sample['condition_caption'])
 
-                if opt.debug and count >= debug_count - 1:
-                    break
-                count += 1
+                # if opt.debug and count >= debug_count - 1:
+                #     break
+                # count += 1
 
     # plot the first 15 images in a grid
     # plt.figure(figsize=(20,12))
@@ -259,7 +265,7 @@ def main(opt):
             # plt.text(0, 20, locations[i], color='white', fontsize=10)
             ax.set_title("Reference" if i == 0 else locations[i - 1])
     else:
-        fig, axes = plt.subplots(8, 3, figsize=(10,15))
+        fig, axes = plt.subplots(8, 3, figsize=(9,24))
         n_images_to_plot = min(8, len(predicted_images))
         for i in range(n_images_to_plot):
             for j in range(3):
@@ -267,13 +273,14 @@ def main(opt):
                 # Use mean instead of sum, which was the previous practice
                 if j == 0:
                     image = ref_images[i]
-                    title = f"{filenames[i]},{conditions[i]}"
+                    # title = f"{filenames[i]}\n{conditions[i]}"
+                    title = f"{conditions[i]}"
                 elif j == 1:
                     image = predicted_images[i].mean(axis=2)
-                    title = f"Predicted, MSE: {mse_list[i]:.2g}, SSIM: {ssim_list[i]:.2g}"
+                    title = f"MSE:{mse_list[i]:.2g},SSIM:{ssim_list[i]:.2g},featMSE:{feats_mse_list[i]:.2g}"
                 else:
                     image = gt_images[i].mean(axis=2)
-                    title = f"GT, {locations[i]}"
+                    title = f"{locations[i]}"
                 print(f"max: {image.max()}, min:{image.min()}")
                 # clip the image to 0-1
                 image = np.clip(image, 0, 255) / 255.0
@@ -283,10 +290,12 @@ def main(opt):
                 # plt.text(0, 20, locations[i], color='white', fontsize=10)
                 ax.set_title(title)
     mse_mean = np.mean(mse_list)
-    ssim_mean = np.mean(ssim_list) 
-    fig.suptitle(f'{split} reference, guidance scale={opt.scale}, DDIM steps={opt.steps}, MSE: {mse_mean:.2g}, SSIM: {ssim_mean:.2g}')
-    fig.savefig(os.path.join(opt.outdir, f'predicted-image-grid-s{opt.scale}.png'))
+    ssim_mean = np.mean(ssim_list)
+    features_mse_mean = np.mean(feats_mse_list)
+    loc_mean_avg_precision = average_precision_score(sc_gt_locations_list, samples_loc_probs_list)
+    fig.suptitle(f'{split}, guidance={opt.scale}, DDIM steps={opt.steps}, MSE: {mse_mean:.2g}, SSIM: {ssim_mean:.2g}, features MSE: {features_mse_mean:.2g}, location MAP: {loc_mean_avg_precision:.2g}', y=0.99)
     fig.tight_layout()
+    fig.savefig(os.path.join(opt.outdir, f'predicted-image-grid-s{opt.scale}.png'))
 
     if opt.fix_reference:
         # Save images in a pickle file
