@@ -107,7 +107,7 @@ class ImageLogger(Callback):
                 global_step=pl_module.global_step)
 
     # @rank_zero_only
-    def _wandb(self, pl_module, images, samples, targets, gt_locations, batch_idx, split):
+    def _wandb(self, pl_module, images, samples, targets, gt_locations, bbox_coords, batch_idx, split):
         print(f"Process {os.getpid()} in _wandb()")
         for k in images:
             grid = images[k]
@@ -171,8 +171,8 @@ class ImageLogger(Callback):
                            pl_module.global_step, pl_module.current_epoch, batch_idx)
 
             logger_log_images = self.logger_log_images.get(logger, lambda *args, **kwargs: None)
-            gt_locations = batch["matched_location_classes"]
-            logger_log_images(pl_module, images, samples, targets, gt_locations, batch_idx, split)
+            gt_locations, bbox_coords = batch["matched_location_classes"], batch["bbox_coords"]
+            logger_log_images(pl_module, images, samples, targets, gt_locations, bbox_coords, batch_idx, split)
 
             if is_train:
                 pl_module.train()

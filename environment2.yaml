@@ -42,6 +42,8 @@ dependencies:
   - lzo=2.10
   - wandb=0.15.4
   - line_profiler=4.1.1
+  - pycocotools=2.0.6
+  - seaborn=0.13.0
   - pip:
     - invisible-watermark==0.1.5
     - test-tube>=0.7.5

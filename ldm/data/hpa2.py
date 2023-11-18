@@ -24,6 +24,21 @@ TOTAL_LENGTH = 247678
 location_mapping = {"Actin filaments": 0, "Aggresome": 1, "Cell Junctions": 2, "Centriolar satellite": 3, "Centrosome": 4, "Cytokinetic bridge": 5, "Cytoplasmic bodies": 6, "Cytosol": 7, "Endoplasmic reticulum": 8, "Endosomes": 9, "Focal adhesion sites": 10, "Golgi apparatus": 11, "Intermediate filaments": 12, "Lipid droplets": 13, "Lysosomes": 14, "Microtubule ends": 15, "Microtubules": 16, "Midbody": 17, "Midbody ring": 18, "Mitochondria": 19, "Mitotic chromosome": 20, "Mitotic spindle": 21, "Nuclear bodies": 22, "Nuclear membrane": 23, "Nuclear speckles": 24, "Nucleoli": 25, "Nucleoli fibrillar center": 26, "Nucleoplasm": 27, "Peroxisomes": 28, "Plasma membrane": 29, "Rods & Rings": 30, "Vesicles": 31, "nan": 32}
 
 matched_location_mapping = {"Actin filaments": 9, "Aggresome": 15, "Centriolar satellite": 12, "Centrosome": 12, "Cytoplasmic bodies": 17, "Cytosol": 16, "Endoplasmic reticulum": 6, "Endosomes": 17, "Focal adhesion sites": 9, "Golgi apparatus": 7, "Intermediate filaments": 8, "Lipid droplets": 17, "Lysosomes": 17, "Microtubules": 10, "Mitochondria": 14, "Mitotic spindle": 11, "Nuclear bodies": 5, "Nuclear membrane": 1, "Nuclear speckles": 4, "Nucleoli": 2, "Nucleoli fibrillar center": 3, "Nucleoplasm": 0, "Peroxisomes": 17, "Plasma membrane": 13, "Vesicles": 17, "nan": 18}
+matched_idx_to_location = {v:k for k,v in matched_location_mapping.items()}
+
+
+def one_hot_encode_locations(locations, location_mapping):
+    loc_labels = list(map(lambda n: location_mapping[n] if n in location_mapping else -1, str(locations).split(',')))
+    # create one-hot encoding for the labels
+    locations_encoding = np.zeros((max(location_mapping.values()) + 1, ), dtype=np.float32)
+    locations_encoding[loc_labels] = 1
+    return locations_encoding
+
+
+def decode_one_hot_locations(locations_encoding, idx_to_location):
+    loc_labels = [idx_to_location[i] for i, v in enumerate(locations_encoding) if v == 1]
+    locations = ','.join(loc_labels)
+    return locations
 
 
 class HPA:
@@ -35,13 +50,14 @@ class HPA:
             self.info_list = TorchSerializedList(pickle.load(fp))
         assert len(self.info_list) == TOTAL_LENGTH
 
-        self.cell_centers_df = pd.read_csv(f"{HPA_DATA_ROOT}/cell_centers.csv")
+        scaled_bboxes_df = pd.read_csv(f"{HPA_DATA_ROOT}/scaled_bboxes.csv")
+        scaled_bboxes_df = scaled_bboxes_df[(scaled_bboxes_df["bbox_height"] <= size) & (scaled_bboxes_df["bbox_width"] <= size)]
 
         assert group in ['train', 'validation']
 
         train_indexes, valid_indexes = self.filter_and_split(filter_func)
         self.indexes = train_indexes if group == "train" else valid_indexes
-        self.cell_centers_df = self.cell_centers_df[self.cell_centers_df['hpa_index'].isin(self.indexes)]
+        self.scaled_bboxes_df = scaled_bboxes_df[scaled_bboxes_df['hpa_index'].isin(self.indexes)]
 
         self.use_uniprot_embedding = use_uniprot_embedding
         assert include_densenet_embedding in ["all", "flt", False]
@@ -135,7 +151,7 @@ class HPA:
 
         return densent_features_avg
 
-    def crop_and_pad(self, img, center_y, center_x, size):
+    def crop_and_pad(self, img, center_y, center_x, bbox_y, bbox_x, size):
         """
         Crop a square region from the image and pad with zeros if necessary.
 
@@ -167,24 +183,25 @@ class HPA:
         pad_right = abs(w - max(w, center_x + half_size))
 
         result = np.pad(cropped, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), 'constant', constant_values=0)
-        return result
 
-    def one_hot_encode_locations(self, locations, location_mapping):
-        loc_labels = list(map(lambda n: location_mapping[n] if n in location_mapping else -1, str(locations).split(',')))
-        # create one-hot encoding for the labels
-        locations_encoding = np.zeros((max(location_mapping.values()) + 1, ), dtype=np.float32)
-        locations_encoding[loc_labels] = 1
-        return locations_encoding
+        # New bbox coordinates
+        new_bbox_y = bbox_y - top + pad_top
+        new_bbox_x = bbox_x - left + pad_left
+        return result, new_bbox_y, new_bbox_x
 
     def __len__(self):
-        return len(self.cell_centers_df) if self.crop == "cells" else len(self.indexes)
+        return len(self.scaled_bboxes_df) if self.crop == "cells" else len(self.indexes)
 
     def __getitem__(self, i):
         if self.crop == "cells":
-            cell = self.cell_centers_df.iloc[i]
-            com_y, com_x, hpa_index = cell[["com_y", "com_x", "hpa_index"]]
+            cell = self.scaled_bboxes_df.iloc[i]
+            # com_y, com_x, hpa_index = cell[["com_y", "com_x", "hpa_index"]]
+            bbox_y, bbox_x, bbox_height, bbox_width, hpa_index, bbox_label = cell[["bbox_y", "bbox_x", "bbox_height", "bbox_width", "hpa_index", "bbox_label"]]
+            com_y = bbox_y + bbox_height / 2
+            com_x = bbox_x + bbox_width / 2
         else:
             hpa_index = self.indexes[i]
+            bbox_height = bbox_width = None
         info = self.info_list[hpa_index]
         plate_id = info["if_plate_id"]
         position = info["position"]
@@ -192,12 +209,17 @@ class HPA:
         image_id = str(plate_id) + "_" + str(position) + "_" + str(sample)
         # sample = dd.io.load(self.cache_file, f'/data_0/data_{hpa_index}').copy()
         im = Image.open(f'{HPA_DATA_ROOT}/images2/{image_id}.tif')
-        imarray = np.array(im)
+        imarray = np.array(im) # pixel values in [0, 255]
         assert imarray.shape == (1024, 1024, 4)
-        
+        mask = Image.open(f'{HPA_DATA_ROOT}/cleaned_masks/{image_id}_cellmask.png')
+        maskarray = np.array(mask)
+        maskarray = cv2.resize(maskarray, (1024, 1024), interpolation=cv2.INTER_NEAREST)
         if self.crop == "cells":
+            imarray[maskarray != bbox_label] = 0
             # Crop the image to the cell and pad with zeros if the borders are out of the image
-            imarray = self.crop_and_pad(imarray, int(com_y), int(com_x), self.size)
+            imarray, new_bbox_y, new_bbox_x = self.crop_and_pad(imarray, int(com_y), int(com_x), int(bbox_y), int(bbox_x), self.size)
+        else:
+            new_bbox_y = new_bbox_x = None
 
         imarray = (imarray / 127.5 - 1.0).astype(np.float32) # Convert image to [-1, 1]
         image = imarray[:, :, self.channels]
@@ -206,12 +228,12 @@ class HPA:
         assert image.min() >= -1
         assert image.min() < 0
         assert image.max() <= 1
-        sample = {"image": image, "ref-image": ref, "hpa_index": hpa_index}
+        sample = {"image": image, "ref-image": ref, "hpa_index": hpa_index, "bbox_coords": np.array([new_bbox_y, new_bbox_x, bbox_height, bbox_width], dtype=int)}
         sample["condition_caption"] = f"{info['gene_names']}/{info['atlas_name']}"
         sample["location_caption"] = f"{info['locations']}"
         if self.include_location:
-            sample["location_classes"] = self.one_hot_encode_locations(info["locations"], location_mapping)
-        sample["matched_location_classes"] = self.one_hot_encode_locations(info["locations"], matched_location_mapping)
+            sample["location_classes"] = one_hot_encode_locations(info["locations"], location_mapping)
+        sample["matched_location_classes"] = one_hot_encode_locations(info["locations"], matched_location_mapping)
         # make sure the pixel values should be [0, 1], but the sample image is ranging from -1 to 1
         transformed = self.preprocessor(image=(sample["image"]+1)/2, mask=(sample["ref-image"]+1)/2)
         # restore the range from [0, 1] to [-1, 1]

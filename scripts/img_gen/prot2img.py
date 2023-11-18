@@ -11,11 +11,11 @@ import numpy as np
 from sklearn.metrics import average_precision_score
 import torch
 from main import instantiate_from_config
+from ldm.data.hpa2 import matched_idx_to_location, decode_one_hot_locations
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.parse import str2bool
 from ldm.util import instantiate_from_config
-from ldm.evaluation.metrics import calc_metrics
-from ldm.models.sc_loc_classifier.cls_inception_v3 import load_model
+from ldm.evaluation.metrics import ImageEvaluator
 # import yaml
 import matplotlib 
 matplotlib.use('agg')
@@ -126,7 +126,7 @@ def main(opt):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
     sampler = DDIMSampler(model)
-    loc_clf = load_model(device)
+    image_evaluator = ImageEvaluator(device=device)
 
     # Create a mapping from protein to all its possible locations
     if opt.fix_reference:
@@ -141,6 +141,8 @@ def main(opt):
     ref = None
     os.makedirs(opt.outdir, exist_ok=True)
     total_count = 8 if opt.debug else len(data.datasets[split])
+    # np.random.seed(123)
+    np.random.seed(12)
     idcs = np.random.choice(len(data.datasets[split]), total_count, replace=False)
     ref_images, predicted_images, gt_images = [], [], []
     locations, filenames, conditions = [], [], []
@@ -178,8 +180,8 @@ def main(opt):
                                                  verbose=False)
                 x_samples_ddim = model.decode_first_stage(samples_ddim)
 
-                gt_locations = sample["matched_location_classes"]
-                mse, ssim, feats_mse, samples_loc_probs, sc_gt_locations = calc_metrics(samples=x_samples_ddim, targets=torch.permute(sample['image'], (0, 3, 1, 2)), refs=torch.permute(ref, (0, 3, 1, 2)), clf=loc_clf, gt_locations=gt_locations)
+                gt_locations, bbox_coords = sample["matched_location_classes"], sample["bbox_coords"]
+                mse, ssim, feats_mse, samples_loc_probs, sc_gt_locations = image_evaluator.calc_metrics(samples=x_samples_ddim, targets=torch.permute(sample['image'], (0, 3, 1, 2)), refs=torch.permute(ref, (0, 3, 1, 2)), gt_locations=gt_locations, bbox_coords=bbox_coords)
                 mse_list.append(mse[0])
                 ssim_list.append(ssim[0])
                 feats_mse_list.append(feats_mse[0])
@@ -234,7 +236,8 @@ def main(opt):
                 ref_images.append(ref_image)
                 predicted_images.append(predicted_image)
                 gt_images.append(prot_image)
-                locations.append(locs_str)
+                # locations.append(locs_str)
+                locations.append(gt_locations)
                 filenames.append(name)
                 conditions.append(sample['condition_caption'])
 
@@ -246,7 +249,6 @@ def main(opt):
     # plt.figure(figsize=(20,12))
     # set color map to gray
     plt.set_cmap('gray')
-
     if opt.fix_reference:
         fig, axes = plt.subplots(3, 5, figsize=(20,12))
         axes = axes.flatten()
@@ -256,7 +258,7 @@ def main(opt):
             ax = axes[i]
             # Use mean instead of sum, which was the previous practice
             image = ref_image if i == 0 else predicted_images[i - 1].mean(axis=2)
-            print(f"max: {image.max()}, min:{image.min()}")
+            # print(f"max: {image.max()}, min:{image.min()}")
             # clip the image to 0-1
             image = np.clip(image, 0, 255) / 255.0
             ax.imshow(image)
@@ -277,11 +279,15 @@ def main(opt):
                     title = f"{conditions[i]}"
                 elif j == 1:
                     image = predicted_images[i].mean(axis=2)
-                    title = f"MSE:{mse_list[i]:.2g},SSIM:{ssim_list[i]:.2g},featMSE:{feats_mse_list[i]:.2g}"
+                    samples_locations = (samples_loc_probs_list[i] > 0.5).astype(int)
+                    samples_locations = decode_one_hot_locations(samples_locations, matched_idx_to_location)
+                    title = f"MSE:{mse_list[i]:.2g},SSIM:{ssim_list[i]:.2g},featMSE:{feats_mse_list[i]:.2g}\nsc:{samples_locations}"
                 else:
                     image = gt_images[i].mean(axis=2)
-                    title = f"{locations[i]}"
-                print(f"max: {image.max()}, min:{image.min()}")
+                    sc_gt_locations = decode_one_hot_locations(sc_gt_locations_list[i], matched_idx_to_location)
+                    gt_locations = decode_one_hot_locations(locations[i], matched_idx_to_location)
+                    title = f"image:{gt_locations}\nsc:{sc_gt_locations}"
+                # print(f"max: {image.max()}, min:{image.min()}")
                 # clip the image to 0-1
                 image = np.clip(image, 0, 255) / 255.0
                 ax.imshow(image)
