@@ -237,7 +237,7 @@ def main(opt):
                 predicted_images.append(predicted_image)
                 gt_images.append(prot_image)
                 # locations.append(locs_str)
-                locations.append(gt_locations)
+                locations.append(gt_locations[0])
                 filenames.append(name)
                 conditions.append(sample['condition_caption'])
 
@@ -298,8 +298,10 @@ def main(opt):
     mse_mean = np.mean(mse_list)
     ssim_mean = np.mean(ssim_list)
     features_mse_mean = np.mean(feats_mse_list)
-    loc_mean_avg_precision = average_precision_score(sc_gt_locations_list, samples_loc_probs_list)
-    fig.suptitle(f'{split}, guidance={opt.scale}, DDIM steps={opt.steps}, MSE: {mse_mean:.2g}, SSIM: {ssim_mean:.2g}, features MSE: {features_mse_mean:.2g}, location MAP: {loc_mean_avg_precision:.2g}', y=0.99)
+    # loc_mean_avg_precision = average_precision_score(sc_gt_locations_list, samples_loc_probs_list)
+    samples_locations = (np.stack(samples_loc_probs_list, axis=0) > 0.5).astype(int)
+    loc_acc = (np.stack(sc_gt_locations_list, axis=0) == samples_locations).all(axis=1).mean()
+    fig.suptitle(f'{split}, guidance={opt.scale}, DDIM steps={opt.steps}, MSE: {mse_mean:.2g}, SSIM: {ssim_mean:.2g}, features MSE: {features_mse_mean:.2g}, location accuracy: {loc_acc:.2g}', y=0.99)
     fig.tight_layout()
     fig.savefig(os.path.join(opt.outdir, f'predicted-image-grid-s{opt.scale}.png'))
 
