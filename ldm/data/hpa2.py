@@ -15,6 +15,7 @@ try:
 except:
    import pickle
 
+from ldm.data import image_processing
 from ldm.data.serialize import TorchSerializedList
 
 HPA_DATA_ROOT = os.environ.get("HPA_DATA_ROOT", "/data/wei/hpa-webdataset-all-composite")
@@ -87,8 +88,9 @@ class HPA:
         else:
             raise NotImplementedError(f"crop {crop} not implemented")
         if rotate_and_flip:
-            transforms.extend([albumentations.Rotate(limit=180, border_mode=cv2.BORDER_REFLECT_101, p=1.0, interpolation=cv2.INTER_NEAREST),
-                albumentations.HorizontalFlip(p=0.5)])
+            # transforms.extend([albumentations.Rotate(limit=180, border_mode=cv2.BORDER_REFLECT_101, p=1.0, interpolation=cv2.INTER_NEAREST),
+            #     albumentations.HorizontalFlip(p=0.5)])
+            raise NotImplementedError("Rotation and flipping not implemented since cell bounding box positions are not rotated and flipped")
         self.preprocessor = albumentations.Compose(transforms)
         print(f"Dataset group: {group}, length: {len(self.indexes)}, image channels: {self.channels}")
 
@@ -151,7 +153,7 @@ class HPA:
 
         return densent_features_avg
 
-    def crop_and_pad(self, img, center_y, center_x, bbox_y, bbox_x, size):
+    def crop_and_pad(self, img, mask, center_y, center_x, bbox_y, bbox_x, size):
         """
         Crop a square region from the image and pad with zeros if necessary.
 
@@ -174,7 +176,8 @@ class HPA:
         right = min(w, center_x + half_size)
 
         # Cropping
-        cropped = img[top:bottom, left:right]
+        cropped_img = img[top:bottom, left:right]
+        cropped_mask = mask[top:bottom, left:right]
 
         # Padding
         pad_top = abs(min(0, center_y - half_size))
@@ -182,12 +185,13 @@ class HPA:
         pad_left = abs(min(0, center_x - half_size))
         pad_right = abs(w - max(w, center_x + half_size))
 
-        result = np.pad(cropped, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), 'constant', constant_values=0)
+        result_img = np.pad(cropped_img, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), 'constant', constant_values=0)
+        result_mask = np.pad(cropped_mask, ((pad_top, pad_bottom), (pad_left, pad_right)), 'constant', constant_values=0)
 
         # New bbox coordinates
         new_bbox_y = bbox_y - top + pad_top
         new_bbox_x = bbox_x - left + pad_left
-        return result, new_bbox_y, new_bbox_x
+        return result_img, result_mask, new_bbox_y, new_bbox_x
 
     def __len__(self):
         return len(self.scaled_bboxes_df) if self.crop == "cells" else len(self.indexes)
@@ -214,31 +218,31 @@ class HPA:
         mask = Image.open(f'{HPA_DATA_ROOT}/cleaned_masks/{image_id}_cellmask.png')
         maskarray = np.array(mask)
         maskarray = cv2.resize(maskarray, (1024, 1024), interpolation=cv2.INTER_NEAREST)
+        sample = {"ori_image": np.copy(imarray), "ori_mask": maskarray, "hpa_index": hpa_index, "bbox_label": bbox_label, "ori_bbox_coords": np.array([bbox_y, bbox_x, bbox_height, bbox_width])}
         if self.crop == "cells":
-            imarray[maskarray != bbox_label] = 0
+            # imarray[maskarray != bbox_label] = 0
             # Crop the image to the cell and pad with zeros if the borders are out of the image
-            imarray, new_bbox_y, new_bbox_x = self.crop_and_pad(imarray, int(com_y), int(com_x), int(bbox_y), int(bbox_x), self.size)
+            imarray, maskarray, new_bbox_y, new_bbox_x = self.crop_and_pad(imarray, maskarray, int(com_y), int(com_x), int(bbox_y), int(bbox_x), self.size)
         else:
             new_bbox_y = new_bbox_x = None
 
         imarray = (imarray / 127.5 - 1.0).astype(np.float32) # Convert image to [-1, 1]
         image = imarray[:, :, self.channels]
         ref = imarray[:, :, [0, 3, 2]] # reference channels: MT, ER, DAPI
-        assert ref.min() == -1 and ref.max() <= 1
-        assert image.min() >= -1
-        assert image.min() < 0
-        assert image.max() <= 1
-        sample = {"image": image, "ref-image": ref, "hpa_index": hpa_index, "bbox_coords": np.array([new_bbox_y, new_bbox_x, bbox_height, bbox_width], dtype=int)}
+        assert image_processing.is_between_minus1_1(ref)
+        assert image_processing.is_between_minus1_1(image)
+        assert image.shape == (self.size, self.size, 3)
+        assert ref.shape == (self.size, self.size, 3)
+        sample["bbox_coords"] = np.array([new_bbox_y, new_bbox_x, bbox_height, bbox_width], dtype=int)
         sample["condition_caption"] = f"{info['gene_names']}/{info['atlas_name']}"
         sample["location_caption"] = f"{info['locations']}"
         if self.include_location:
             sample["location_classes"] = one_hot_encode_locations(info["locations"], location_mapping)
         sample["matched_location_classes"] = one_hot_encode_locations(info["locations"], matched_location_mapping)
         # make sure the pixel values should be [0, 1], but the sample image is ranging from -1 to 1
-        transformed = self.preprocessor(image=(sample["image"]+1)/2, mask=(sample["ref-image"]+1)/2)
+        transformed = self.preprocessor(image=(image+1)/2, ref=(ref+1)/2, mask=maskarray)
         # restore the range from [0, 1] to [-1, 1]
-        sample["image"] = transformed["image"]*2 -1
-        sample["ref-image"] = transformed["mask"]*2 -1
+        sample.update({"image": transformed["image"]*2 -1, "ref-image": transformed["ref"]*2 -1, "mask": transformed["mask"]})
         if self.return_info:
             sample["info"] = info
 

@@ -125,7 +125,7 @@ data:
         include_densenet_embedding: all
         channels: [1, 1, 1]
         filter_func: has_location
-        rotate_and_flip: true
+        rotate_and_flip: false
         include_location: true
         size: 256
         crop: cells

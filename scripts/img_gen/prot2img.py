@@ -17,8 +17,9 @@ from ldm.parse import str2bool
 from ldm.util import instantiate_from_config
 from ldm.evaluation.metrics import ImageEvaluator
 # import yaml
-import matplotlib 
+import matplotlib
 matplotlib.use('agg')
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 
 """
@@ -89,7 +90,7 @@ Command example: CUDA_VISIBLE_DEVICES=0 python scripts/img_gen/prot2img.py --con
 
 def main(opt):
     # now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    split = "train"
+    split = "validation"
     if opt.name:
         name = opt.name
     else:
@@ -140,110 +141,138 @@ def main(opt):
 
     ref = None
     os.makedirs(opt.outdir, exist_ok=True)
-    total_count = 8 if opt.debug else len(data.datasets[split])
+    count_per_loc = 5
     # np.random.seed(123)
     np.random.seed(12)
-    idcs = np.random.choice(len(data.datasets[split]), total_count, replace=False)
-    ref_images, predicted_images, gt_images = [], [], []
-    locations, filenames, conditions = [], [], []
-    mse_list, ssim_list, feats_mse_list, samples_loc_probs_list, sc_gt_locations_list = [[] for _ in range(5)]
+    idcs = list(range(len(data.datasets[split])))
+    np.random.shuffle(idcs)
+    examples, ref_images, predicted_images, gt_images, all_bbox_coords = [], [], [], [], []
+    loc_counter = defaultdict(int)
+    locations, conditions = [], []
+    mse_list, ssim_list, mse_bbox_list, ssim_bbox_list, feats_mse_list, samples_loc_probs_list, sc_gt_locations_list = [[] for _ in range(7)]
+    for i in tqdm(idcs, desc=f"Finding examples with specific locations"):
+        sample = data.datasets[split][i]
+        add = False
+        for i, v in enumerate(sample["matched_location_classes"]):
+            if v == 1:
+                if loc_counter[i] < count_per_loc:
+                    add = True
+                    loc_counter[i] += 1
+        if add:
+            examples.append(sample)
+        if len(loc_counter) == len(matched_idx_to_location) and min(loc_counter.values()) >= count_per_loc:
+            break
     with torch.no_grad():
         with model.ema_scope():
-            for i in tqdm(idcs):
-            # for i, sample in tqdm(enumerate(data.datasets[split]), total=total_count):
-            #     if i % 3 != 0:
-            #         continue
-                sample = data.datasets[split][i]
-                sample = {k: torch.from_numpy(np.expand_dims(sample[k], axis=0)).to(device) if isinstance(sample[k], (np.ndarray, np.generic)) else sample[k] for k in sample.keys()}
-                name = sample['info']['filename'].split('/')[-1]
+            batch_size = 1
+            for i in range(0, len(examples), batch_size):
+                collated_examples = dict()
+                for k in examples[0].keys():
+                    collated_examples[k] = [x[k] for x in examples[i:i + batch_size]]
+                    if isinstance(examples[0][k], (np.ndarray, np.generic)):
+                        collated_examples[k] = torch.tensor(collated_examples[k]).to(device)
+                # sample = {k: torch.from_numpy(collated_examples[k]).to(device) if isinstance(sample[k], (np.ndarray, np.generic)) else sample[k] for k in sample.keys()}
+                # name = sample['info']['filename'].split('/')[-1]
                 if opt.fix_reference:
                     if ref is None:
                         ref = sample['ref-image']
                     else:
                         sample['ref-image'] = ref
                 else:
-                    ref = sample['ref-image']
-                outpath = os.path.join(opt.outdir, name)
+                    ref = collated_examples['ref-image']
+                # outpath = os.path.join(opt.outdir, name)
 
                 # encode masked image and concat downsampled mask
-                c = model.cond_stage_model(sample)
+                c = model.cond_stage_model(collated_examples)
                 # uc = {'c_concat': [torch.zeros_like(v) for v in c['c_concat']], 'c_crossattn': [torch.zeros_like(v) for v in c['c_crossattn']]} #
                 uc = {'c_concat': c['c_concat'], 'c_crossattn': [torch.zeros_like(v) for v in c['c_crossattn']]} #
 
                 shape = (c['c_concat'][0].shape[1],)+c['c_concat'][0].shape[2:]
                 samples_ddim, _ = sampler.sample(S=opt.steps,
-                                                 conditioning=c,
-                                                 batch_size=c['c_concat'][0].shape[0],
-                                                 shape=shape,
-                                                 unconditional_guidance_scale=opt.scale,
-                                                 unconditional_conditioning=uc,
-                                                 verbose=False)
+                                                    conditioning=c,
+                                                    batch_size=c['c_concat'][0].shape[0],
+                                                    shape=shape,
+                                                    unconditional_guidance_scale=opt.scale,
+                                                    unconditional_conditioning=uc,
+                                                    verbose=False)
                 x_samples_ddim = model.decode_first_stage(samples_ddim)
 
-                gt_locations, bbox_coords = sample["matched_location_classes"], sample["bbox_coords"]
-                mse, ssim, feats_mse, samples_loc_probs, sc_gt_locations = image_evaluator.calc_metrics(samples=x_samples_ddim, targets=torch.permute(sample['image'], (0, 3, 1, 2)), refs=torch.permute(ref, (0, 3, 1, 2)), gt_locations=gt_locations, bbox_coords=bbox_coords)
-                mse_list.append(mse[0])
-                ssim_list.append(ssim[0])
-                feats_mse_list.append(feats_mse[0])
-                samples_loc_probs_list.append(samples_loc_probs[0])
-                sc_gt_locations_list.append(sc_gt_locations[0])
+                gt_locations, bbox_coords = collated_examples["matched_location_classes"], collated_examples["bbox_coords"]
+                mse, ssim, mse_bbox, ssim_bbox, feats_mse, samples_loc_probs, sc_gt_locations = image_evaluator.calc_metrics(samples=x_samples_ddim, targets=torch.permute(collated_examples['image'], (0, 3, 1, 2)), refs=torch.permute(ref, (0, 3, 1, 2)), gt_locations=gt_locations, bbox_coords=bbox_coords, masks=collated_examples["mask"], bbox_labels=collated_examples["bbox_label"])
+                mse_list.append(mse)
+                ssim_list.append(ssim)
+                mse_bbox_list.append(mse_bbox)
+                ssim_bbox_list.append(ssim_bbox)
+                feats_mse_list.append(feats_mse)
+                samples_loc_probs_list.append(samples_loc_probs)
+                sc_gt_locations_list.append(sc_gt_locations)
+                all_bbox_coords.append(bbox_coords.cpu().numpy())
 
-                prot_image = torch.clamp((sample['image']+1.0)/2.0,
+                prot_image = torch.clamp((collated_examples['image']+1.0)/2.0,
                                     min=0.0, max=1.0)
                 ref_image = torch.clamp((ref+1.0)/2.0,
                                     min=0.0, max=1.0)
                 predicted_image = torch.clamp((x_samples_ddim+1.0)/2.0,
-                                              min=0.0, max=1.0)
+                                                min=0.0, max=1.0)
 
-                ref_image = ref_image.cpu().numpy()[0]*255
-                ref_image = ref_image.astype(np.uint8)
-                # Image.fromarray(ref_image.astype(np.uint8)).save(outpath+sample['info']['locations']+'_reference.png')
+                # ref_image = ref_image.cpu().numpy()*255
+                # ref_image = ref_image.astype(np.uint8)
                 
-                predicted_image = predicted_image.cpu().numpy().transpose(0,2,3,1)[0]*255
-                predicted_image = predicted_image.astype(np.uint8)
+                # predicted_image = predicted_image.cpu().numpy().transpose(0,2,3,1)*255
+                # predicted_image = predicted_image.astype(np.uint8)
                 # Image.fromarray(predicted_image.astype(np.uint8)).save(outpath+sample['info']['locations']+'_prediction.png')
-                fig, axes = plt.subplots(1, 2 if opt.fix_reference else 3)
-                ax = axes[0]
-                ax.axis('off')
-                ax.imshow(ref_image.astype(np.uint8))
-                ax.set_title("Reference")
-                ax = axes[1]
-                ax.axis('off')
-                ax.imshow(predicted_image.astype(np.uint8))
-                ax.set_title("Predicted protein")
-                if not opt.fix_reference:
-                    prot_image = prot_image.cpu().numpy()[0]*255
-                    prot_image = prot_image.astype(np.uint8)
-                    # Image.fromarray(prot_image.astype(np.uint8)).save(outpath+'protein.png')
-                    ax = axes[2]
-                    ax.axis('off')
-                    ax.imshow(prot_image.astype(np.uint8))
-                    ax.set_title("GT protein")
+                # fig, axes = plt.subplots(1, 2 if opt.fix_reference else 3)
+                # ax = axes[0]
+                # ax.axis('off')
+                # ax.imshow(ref_image.astype(np.uint8))
+                # ax.set_title("Reference")
+                # ax = axes[1]
+                # ax.axis('off')
+                # ax.imshow(predicted_image.astype(np.uint8))
+                # ax.set_title("Predicted protein")
+                # if not opt.fix_reference:
+                #     prot_image = prot_image.cpu().numpy()[0]*255
+                #     prot_image = prot_image.astype(np.uint8)
+                #     # Image.fromarray(prot_image.astype(np.uint8)).save(outpath+'protein.png')
+                #     ax = axes[2]
+                #     ax.axis('off')
+                #     ax.imshow(prot_image.astype(np.uint8))
+                #     ax.set_title("GT protein")
 
-                prot, cl = sample['condition_caption'].split("/")
-                # locs_str = ",".join(protcl2locs[(prot, cl)]) if opt.fix_reference else sample['info']['locations']
-                if opt.fix_reference:
-                    locs_str = ""
-                    for j, loc in enumerate(protcl2locs[(prot, cl)]):
-                        if j > 0 and j % 2 == 0:
-                            locs_str += "\n"
-                        locs_str += f"{loc},"
-                else:
-                    locs_str = sample['info']['locations']
-                fig.suptitle(f"{name}, {sample['condition_caption']}, {locs_str}")
-                fig.savefig(outpath)
+                # prot, cl = sample['condition_caption'].split("/")
+                # if opt.fix_reference:
+                #     locs_str = ""
+                #     for j, loc in enumerate(protcl2locs[(prot, cl)]):
+                #         if j > 0 and j % 2 == 0:
+                #             locs_str += "\n"
+                #         locs_str += f"{loc},"
+                # else:
+                #     locs_str = sample['info']['locations']
+                # fig.suptitle(f"{name}, {sample['condition_caption']}, {locs_str}")
+                # fig.savefig(outpath)
 
-                ref_images.append(ref_image)
-                predicted_images.append(predicted_image)
-                gt_images.append(prot_image)
-                # locations.append(locs_str)
-                locations.append(gt_locations[0])
-                filenames.append(name)
-                conditions.append(sample['condition_caption'])
+                ref_images.append(ref_image.cpu().numpy())
+                predicted_images.append(predicted_image.cpu().numpy().transpose(0,2,3,1))
+                gt_images.append(prot_image.cpu().numpy())
+                locations.append(gt_locations)
+                # filenames.append(name)
+                conditions.extend(collated_examples['condition_caption'])
 
-                # if opt.debug and count >= debug_count - 1:
-                #     break
-                # count += 1
+            # if opt.debug and count >= debug_count - 1:
+            #     break
+            # count += 1
+            mse_list = np.concatenate(mse_list, axis=0)
+            ssim_list = np.concatenate(ssim_list, axis=0)
+            mse_bbox_list = np.concatenate(mse_bbox_list, axis=0)
+            ssim_bbox_list = np.concatenate(ssim_bbox_list, axis=0)
+            feats_mse_list = np.concatenate(feats_mse_list, axis=0)
+            samples_loc_probs_list = np.concatenate(samples_loc_probs_list, axis=0)
+            sc_gt_locations_list = np.concatenate(sc_gt_locations_list, axis=0)
+            ref_images = np.concatenate(ref_images, axis=0)
+            predicted_images = np.concatenate(predicted_images, axis=0)
+            gt_images = np.concatenate(gt_images, axis=0)
+            all_bbox_coords = np.concatenate(all_bbox_coords, axis=0)
+            locations = torch.cat(locations, dim=0)
 
     # plot the first 15 images in a grid
     # plt.figure(figsize=(20,12))
@@ -267,8 +296,9 @@ def main(opt):
             # plt.text(0, 20, locations[i], color='white', fontsize=10)
             ax.set_title("Reference" if i == 0 else locations[i - 1])
     else:
-        fig, axes = plt.subplots(8, 3, figsize=(9,24))
-        n_images_to_plot = min(8, len(predicted_images))
+        # n_images_to_plot = min(8, len(predicted_images))
+        n_images_to_plot = len(predicted_images)
+        fig, axes = plt.subplots(n_images_to_plot, 3, figsize=(9, n_images_to_plot * 3))
         for i in range(n_images_to_plot):
             for j in range(3):
                 ax = axes[i, j]
@@ -276,12 +306,12 @@ def main(opt):
                 if j == 0:
                     image = ref_images[i]
                     # title = f"{filenames[i]}\n{conditions[i]}"
-                    title = f"{conditions[i]}"
+                    title = f"example {i}\n{conditions[i]}"
                 elif j == 1:
                     image = predicted_images[i].mean(axis=2)
                     samples_locations = (samples_loc_probs_list[i] > 0.5).astype(int)
                     samples_locations = decode_one_hot_locations(samples_locations, matched_idx_to_location)
-                    title = f"MSE:{mse_list[i]:.2g},SSIM:{ssim_list[i]:.2g},featMSE:{feats_mse_list[i]:.2g}\nsc:{samples_locations}"
+                    title = f"MSE:{mse_list[i]:.2g},SSIM:{ssim_list[i]:.2g},featMSE:{feats_mse_list[i]:.2g}\nbboxMSE:{mse_bbox_list[i]:.2g},bboxSSIM:{ssim_bbox_list[i]:.2g},\nsc:{samples_locations}"
                 else:
                     image = gt_images[i].mean(axis=2)
                     sc_gt_locations = decode_one_hot_locations(sc_gt_locations_list[i], matched_idx_to_location)
@@ -289,19 +319,27 @@ def main(opt):
                     title = f"image:{gt_locations}\nsc:{sc_gt_locations}"
                 # print(f"max: {image.max()}, min:{image.min()}")
                 # clip the image to 0-1
-                image = np.clip(image, 0, 255) / 255.0
+                # image = np.clip(image, 0, 255) / 255.0
                 ax.imshow(image)
+
+                # Add the patch to the Axes
+                bbox = all_bbox_coords[i]
+                rect = patches.Rectangle((bbox[1], bbox[0]), bbox[3], bbox[2], linewidth=1, edgecolor='r', facecolor='none')
+                ax.add_patch(rect)
+
                 ax.axis('off')
                 # plot text in each image with locations
                 # plt.text(0, 20, locations[i], color='white', fontsize=10)
                 ax.set_title(title)
     mse_mean = np.mean(mse_list)
     ssim_mean = np.mean(ssim_list)
+    mse_bbox_mean = np.mean(mse_bbox_list)
+    ssim_bbox_mean = np.mean(ssim_bbox_list)
     features_mse_mean = np.mean(feats_mse_list)
     # loc_mean_avg_precision = average_precision_score(sc_gt_locations_list, samples_loc_probs_list)
     samples_locations = (np.stack(samples_loc_probs_list, axis=0) > 0.5).astype(int)
     loc_acc = (np.stack(sc_gt_locations_list, axis=0) == samples_locations).all(axis=1).mean()
-    fig.suptitle(f'{split}, guidance={opt.scale}, DDIM steps={opt.steps}, MSE: {mse_mean:.2g}, SSIM: {ssim_mean:.2g}, features MSE: {features_mse_mean:.2g}, location accuracy: {loc_acc:.2g}', y=0.99)
+    fig.suptitle(f'{split},guid={opt.scale},steps={opt.steps},MSE:{mse_mean:.2g},SSIM:{ssim_mean:.2g},bboxMSE:{mse_bbox_mean:.2g},bboxSSIM:{ssim_bbox_mean:.2g},featMSE:{features_mse_mean:.2g},locAcc:{loc_acc:.2g}', y=0.999)
     fig.tight_layout()
     fig.savefig(os.path.join(opt.outdir, f'predicted-image-grid-s{opt.scale}.png'))
 
