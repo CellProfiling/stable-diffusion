@@ -490,6 +490,7 @@ class HPAClassEmbedder(nn.Module):
             self.image_embedding_model = instantiate_from_config(image_embedding_model)
 
     def forward(self, batch, key=None):
+        conditions = dict()
         embed = []
         if self.include_cellline:
             embed.append(batch["cell-line"])
@@ -503,6 +504,8 @@ class HPAClassEmbedder(nn.Module):
                 embed.append(batch["location_classes"])
         if self.include_densenet_embedding:
             embed.append(batch["densent_avg"])
+        if embed:
+            conditions["c_crossattn"] = embed
 
         if self.include_ref_image:
             image = batch["ref-image"]
@@ -512,8 +515,8 @@ class HPAClassEmbedder(nn.Module):
                 img_embed = self.image_embedding_model.encode(image)
             if torch.any(torch.isnan(img_embed)):
                 raise Exception("NAN values encountered in the image embedding")
-            return {"c_concat": [img_embed], "c_crossattn": embed}
-        return {"c_crossattn": embed}
+            conditions["c_concat"] = [img_embed]
+        return conditions
 
     def decode(self, c):
         assert self.include_ref_image

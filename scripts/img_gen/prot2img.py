@@ -12,6 +12,7 @@ from sklearn.metrics import average_precision_score
 import torch
 from main import instantiate_from_config
 from ldm.data.hpa2 import matched_idx_to_location, decode_one_hot_locations
+from ldm.data import image_processing
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.parse import str2bool
 from ldm.util import instantiate_from_config
@@ -23,7 +24,7 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 
 """
-Command example: CUDA_VISIBLE_DEVICES=0 python scripts/img_gen/prot2img.py --config=configs/latent-diffusion/hpa2__ldm__vq4__densenet_all__splitcpp__cell256-debug.yaml --checkpoint=/scratch/users/xikunz2/stable-diffusion/logs/2023-10-15T10-18-18_hpa2__ldm__vq4__densenet_all__splitcpp__cell256/checkpoints/last.ckpt --scale=2 -d
+Command example: CUDA_VISIBLE_DEVICES=0 python -m pdb scripts/img_gen/prot2img.py --config=configs/latent-diffusion/hpa23__ldm__vq4__imputation__cells512_0.5-debug.yaml --checkpoint=/scratch/users/xikunz2/stable-diffusion/logs/2023-10-15T10-18-18_hpa2__ldm__vq4__densenet_all__splitcpp__cell256/checkpoints/last.ckpt --scale=2 -d
 
 """
 
@@ -66,31 +67,9 @@ Command example: CUDA_VISIBLE_DEVICES=0 python scripts/img_gen/prot2img.py --con
 # """
 
 
-# def make_batch(image, mask, device):
-#     image = np.array(Image.open(image).convert("RGB"))
-#     image = image.astype(np.float32)/255.0
-#     image = image[None].transpose(0,3,1,2)
-#     image = torch.from_numpy(image)
-
-#     mask = np.array(Image.open(mask).convert("L"))
-#     mask = mask.astype(np.float32)/255.0
-#     mask = mask[None,None]
-#     mask[mask < 0.5] = 0
-#     mask[mask >= 0.5] = 1
-#     mask = torch.from_numpy(mask)
-
-#     masked_image = (1-mask)*image
-
-#     batch = {"image": image, "mask": mask, "masked_image": masked_image}
-#     for k in batch:
-#         batch[k] = batch[k].to(device=device)
-#         batch[k] = batch[k]*2.0-1.0
-#     return batch
-
-
 def main(opt):
     # now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    split = "validation"
+    split = "train"
     if opt.name:
         name = opt.name
     else:
@@ -141,7 +120,7 @@ def main(opt):
 
     ref = None
     os.makedirs(opt.outdir, exist_ok=True)
-    count_per_loc = 5
+    count_per_loc, max_count = float("inf"), 10
     # np.random.seed(123)
     np.random.seed(12)
     idcs = list(range(len(data.datasets[split])))
@@ -151,16 +130,18 @@ def main(opt):
     locations, conditions = [], []
     mse_list, ssim_list, mse_bbox_list, ssim_bbox_list, feats_mse_list, samples_loc_probs_list, sc_gt_locations_list = [[] for _ in range(7)]
     for i in tqdm(idcs, desc=f"Finding examples with specific locations"):
+        # print(f"\nExample {i}: ", end="")
         sample = data.datasets[split][i]
         add = False
-        for i, v in enumerate(sample["matched_location_classes"]):
+        for j, v in enumerate(sample["matched_location_classes"]):
             if v == 1:
-                if loc_counter[i] < count_per_loc:
+                # print(f"{j} ", end="")
+                if loc_counter[j] < count_per_loc:
                     add = True
-                    loc_counter[i] += 1
+                    loc_counter[j] += 1
         if add:
             examples.append(sample)
-        if len(loc_counter) == len(matched_idx_to_location) and min(loc_counter.values()) >= count_per_loc:
+        if (len(loc_counter) == len(matched_idx_to_location) and min(loc_counter.values()) >= count_per_loc) or len(examples) >= max_count:
             break
     with torch.no_grad():
         with model.ema_scope():
@@ -184,17 +165,14 @@ def main(opt):
 
                 # encode masked image and concat downsampled mask
                 c = model.cond_stage_model(collated_examples)
-                # uc = {'c_concat': [torch.zeros_like(v) for v in c['c_concat']], 'c_crossattn': [torch.zeros_like(v) for v in c['c_crossattn']]} #
-                uc = {'c_concat': c['c_concat'], 'c_crossattn': [torch.zeros_like(v) for v in c['c_crossattn']]} #
+                uc = dict()
+                if "c_concat" in c:
+                    uc['c_concat'] = c['c_concat']
+                if "c_crossattn" in c:
+                    uc['c_crossattn'] = [torch.zeros_like(v) for v in c['c_crossattn']]
 
                 shape = (c['c_concat'][0].shape[1],)+c['c_concat'][0].shape[2:]
-                samples_ddim, _ = sampler.sample(S=opt.steps,
-                                                    conditioning=c,
-                                                    batch_size=c['c_concat'][0].shape[0],
-                                                    shape=shape,
-                                                    unconditional_guidance_scale=opt.scale,
-                                                    unconditional_conditioning=uc,
-                                                    verbose=False)
+                samples_ddim, _ = sampler.sample(S=opt.steps, conditioning=c, batch_size=c['c_concat'][0].shape[0], shape=shape, unconditional_guidance_scale=opt.scale, unconditional_conditioning=uc, verbose=False)
                 x_samples_ddim = model.decode_first_stage(samples_ddim)
 
                 gt_locations, bbox_coords = collated_examples["matched_location_classes"], collated_examples["bbox_coords"]
@@ -301,7 +279,7 @@ def main(opt):
         fig, axes = plt.subplots(n_images_to_plot, 3, figsize=(9, n_images_to_plot * 3))
         for i in range(n_images_to_plot):
             for j in range(3):
-                ax = axes[i, j]
+                ax = axes[i, j] if n_images_to_plot > 1 else axes[j]
                 # Use mean instead of sum, which was the previous practice
                 if j == 0:
                     image = ref_images[i]

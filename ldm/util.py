@@ -254,7 +254,7 @@ def parallel_data_prefetch(
 
 
 class MyPool:
-    def __init__(self, processes, chunksize, initializer, initargs):
+    def __init__(self, processes, chunksize, initializer=None, initargs=None):
         assert type(processes) == int
         assert processes >= 1 or processes == -1
         if processes == -1:

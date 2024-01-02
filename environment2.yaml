@@ -44,6 +44,7 @@ dependencies:
   - line_profiler=4.1.1
   - pycocotools=2.0.6
   - seaborn=0.13.0
+  - scikit-image=0.19.3
   - pip:
     - invisible-watermark==0.1.5
     - test-tube>=0.7.5
