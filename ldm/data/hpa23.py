@@ -1,19 +1,13 @@
-from collections import defaultdict
 import cv2
 import albumentations
 import numpy as np
 from PIL import Image
-from tqdm import tqdm, trange
+from tqdm import tqdm
 import os
 import h5py
 import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
-
-try:
-   import cPickle as pickle
-except:
-   import pickle
 
 from ldm.data import image_processing
 from ldm.data.serialize import TorchSerializedList
@@ -42,8 +36,6 @@ def decode_one_hot_locations(locations_encoding, idx_to_location):
 
 class HPA:
 
-    # all_densenet_avg_list = []
-
     def __init__(self, group='train', split="imputation", channels=None, include_location=False, include_densenet_embedding=False, return_info=False, rotate_and_flip=False, use_uniprot_embedding=False, crop_size=512, crop_type="cells", scale_factor=0.5):
         self.metadata = pd.read_csv(f"{HPA_DATA_ROOT}/v23/IF-image-w-splits.csv", index_col=0)
         self.total_length = len(self.metadata)
@@ -58,10 +50,7 @@ class HPA:
 
         self.use_uniprot_embedding = use_uniprot_embedding
         assert include_densenet_embedding in ["all", "flt", False]
-        # if include_densenet_embedding and not self.all_densenet_avg_list:
-        #     all_densenet_avg_list = self.compute_avg_densenet_embeds(train_indexes, valid_indexes, include_densenet_embedding)
-        #     assert len(all_densenet_avg_list) == self.total_length
-        #     HPA.all_densenet_avg_list = TorchSerializedList(all_densenet_avg_list)
+
         if include_densenet_embedding:
             self.densenet_embeddings, self.imageid_to_embedidx, self.same_prot_embedidcs = self.prepare_densenet_embeds(train_indexes, valid_indexes, include_densenet_embedding)
 
@@ -102,14 +91,6 @@ class HPA:
             densenet_embeddings.append(f[imageid])
         densenet_embeddings = np.stack(densenet_embeddings)
 
-        # Group images of the same protein
-        # gid_to_nonvalid_imgids = defaultdict(list)
-        # for index, row in tqdm(self.metadata.iterrows(), total=self.total_length, desc="Grouping images of the same protein"):
-        #     if index not in valid_indexes and (include_densenet_embedding == "all" or index in train_indexes):
-        #         gid = row['gene_names']
-        #         if not isinstance(gid, str):
-        #             continue
-        #         gid_to_nonvalid_imgids[gid].append(row["image_id"])
         if include_densenet_embedding == "all":
             nonvalid_metadata = self.metadata[~self.metadata.index.isin(valid_indexes)]
         else:
@@ -127,31 +108,6 @@ class HPA:
                 imageids.remove(imageid)
             same_prot_embedidcs[index] = [imageid_to_embedidx[imageid] for imageid in imageids if imageid in imageid_to_embedidx]
         return densenet_embeddings, imageid_to_embedidx, same_prot_embedidcs
-
-        # densent_features_avg = []
-        # zero_emd_count = 0
-        # for index in trange(self.total_length, desc="Calculating average densenet embeddings"):
-        #     gid = self.info_list[index]['ensembl_ids']
-        #     if not isinstance(gid, str):
-        #         # no ensembl id
-        #         densent_features_avg.append(np.zeros([1024], dtype='float32'))
-        #         zero_emd_count += 1
-        #         continue
-        #     # assert index in ensembl_ids[gid], f"{index} not in {ensembl_ids[gid]}"
-        #     ids = gid_to_nonvalid_imgids[gid].copy()
-        #     if index in ids:
-        #         ids.remove(index)
-        #     if len(ids) == 0:
-        #         densent_features_avg.append(np.zeros([1024], dtype='float32'))
-        #         zero_emd_count += 1
-        #     else:
-        #         # multi_avg_embeddings.append(index)
-        #         avg_emd = densenet_embeds[ids].mean(axis=0)
-        #         assert avg_emd.sum() != 0
-        #         densent_features_avg.append(avg_emd)
-        # print(f"There are {zero_emd_count} images with a zero avg densenet embedding.")
-
-        # return densent_features_avg
 
     def __len__(self):
         return len(self.cell_masks_metadata) if self.crop_type == "cells" else len(self.indexes)
@@ -172,7 +128,6 @@ class HPA:
         mask = Image.open(f'/scratch/groups/emmalu/HPA_masks/{image_id}_cellmask.png')
         maskarray = np.array(mask)
         assert maskarray.shape == (image_height, image_width)
-        # maskarray = cv2.resize(maskarray, (1024, 1024), interpolation=cv2.INTER_NEAREST)
         # sample = {"ori_image": np.copy(imarray), "ori_mask": maskarray, "hpa_index": hpa_index, "bbox_label": bbox_label}
         sample = {"hpa_index": hpa_index, "bbox_label": bbox_label}
         if self.crop_type == "cells":
@@ -212,13 +167,11 @@ class HPA:
                     if prot_id in file:
                         sample['prot_id'] = prot_id
                         sample['embed'] = np.array(file[prot_id])
-                                # uniprot_indexes.append(idx)
         if self.include_densenet_embedding:
             if hpa_index not in self.same_prot_embedidcs or not self.same_prot_embedidcs[hpa_index]:
                 print(f"The average densenet embedding to use for image {hpa_index} of gene {info['gene_names']} is zero.")
                 densent_features_avg = np.zeros([1024], dtype='float32')
             else:
-                # multi_avg_embeddings.append(index)
                 avg_emd = self.densenet_embeddings[self.same_prot_embedidcs[hpa_index]].mean(axis=0)
                 assert avg_emd.sum() != 0
                 densent_features_avg = avg_emd

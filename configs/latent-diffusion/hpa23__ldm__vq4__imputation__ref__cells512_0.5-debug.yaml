@@ -15,7 +15,7 @@ model:
     channels: 3
     cond_stage_trainable: true
     concat_mode: false # this will set conditioning_key to "crossattn" if not exists
-    conditioning_key: hybrid # force conditioning_key to be "hybrid"
+    conditioning_key: concat
     cond_dropout: 0.1 # dropout conditions for class-conditioned model
     # scale_by_std: true
     scale_factor: 0.18215
@@ -44,15 +44,15 @@ model:
         num_heads: 8
         use_scale_shift_norm: True
         resblock_updown: True
-        use_spatial_transformer: True
-        context_dim: 1024
+        # use_spatial_transformer: True
+        # context_dim: 384
 
     first_stage_config:
       target: ldm.models.autoencoder.VQModelInterface
       params:
         embed_dim: 3
         n_embed: 8192
-        # autoencoder for the reference + protein channel
+        # autoencoder for the protein channel
         ckpt_path: /scratch/users/xikunz2/stable-diffusion/logs/2023-10-11T23-37-05_hpa2__autoencoder__vq4__p__cells256/checkpoints/last.ckpt
         ddconfig:
           double_z: false
@@ -86,7 +86,7 @@ model:
           params:
             embed_dim: 3
             n_embed: 8192
-            # autoencoder for the reference channel
+            # autoencoder for the reference channels
             ckpt_path: /scratch/users/xikunz2/stable-diffusion/logs/2023-10-12T20-32-07_hpa2__autoencoder__vq4__r__cells256/checkpoints/last.ckpt
             ddconfig:
               double_z: false
@@ -120,7 +120,7 @@ data:
       target: ldm.data.hpa23.HPA
       params:
         group: 'train'
-        include_densenet_embedding: all
+        include_densenet_embedding: false
         channels: [1, 1, 1]
         rotate_and_flip: false
         include_location: false
@@ -132,7 +132,7 @@ data:
       target: ldm.data.hpa23.HPA
       params:
         group: 'validation'
-        include_densenet_embedding: all
+        include_densenet_embedding: false
         channels: [1, 1, 1]
         include_location: false
         crop_size: 512
