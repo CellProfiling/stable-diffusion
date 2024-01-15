@@ -112,7 +112,7 @@ data:
   target: ldm.data.base.DataModuleFromConfig
   params:
     batch_size: 8 # We can use a maximum batch size of 8 on a single GPU; doesn't need to change this when using different numbers of GPUs
-    num_workers: 0 # Number of dataloader subprocesses per GPU process (if using DDP); set it to 1 or 2 in this case
+    num_workers: 1 # Number of dataloader subprocesses per GPU process (if using DDP); set it to 1 or 2 in this case
     wrap: False
     use_worker_init_fn: true
     shuffle_val_dataloader: true

@@ -470,14 +470,12 @@ class HPACombineDatasetSR(Dataset):
 #         return c
 
 class HPAClassEmbedder(nn.Module):
-    def __init__(self, include_location=False, include_ref_image=False, include_cellline=True, include_embed=False, use_loc_embedding=True, image_embedding_model=None, include_densenet_embedding=False):
+    def __init__(self, include_location=False, include_ref_image=False, include_cellline=True, use_loc_embedding=True, image_embedding_model=None):
         super().__init__()
         self.include_location = include_location
         self.include_ref_image = include_ref_image
-        self.include_embed = include_embed
         self.include_cellline = include_cellline
         self.use_loc_embedding = use_loc_embedding
-        self.include_densenet_embedding = include_densenet_embedding
         if self.use_loc_embedding:
             self.loc_embedding = nn.Sequential(
                 nn.Linear(len(location_mapping.keys()), 128),
@@ -494,15 +492,15 @@ class HPAClassEmbedder(nn.Module):
         embed = []
         if self.include_cellline:
             embed.append(batch["cell-line"])
-        if self.include_embed:
-            embed.append(batch["embed"])
+        if "seq_embed" in batch:
+            embed.append(batch["seq_embed"])
         if self.include_location:
             if self.use_loc_embedding:
                 embeder = self.loc_embedding.to(batch["location_classes"].device)
                 embed.append(embeder(batch["location_classes"]))
             else:
                 embed.append(batch["location_classes"])
-        if self.include_densenet_embedding:
+        if "densent_avg" in batch:
             embed.append(batch["densent_avg"])
         if embed:
             conditions["c_crossattn"] = embed

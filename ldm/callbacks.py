@@ -15,7 +15,7 @@ from pytorch_lightning.utilities.distributed import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 import wandb
 
-from ldm.evaluation.metrics import calc_metrics
+from ldm.evaluation.metrics import ImageEvaluator
 from ldm.util import send_message_to_slack, send_image_to_slack
 
 
@@ -95,8 +95,10 @@ class ImageLogger(Callback):
         self._last_val_loss = None
         self.monitor_val_metric = monitor_val_metric
         self.metrics = {"train/mse": [], "train/ssim": [], "val/mse": [], "val/ssim": []}
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.image_evaluator = ImageEvaluator(device=device)
 
-    def _testtube(self, pl_module, images, samples, targets, gt_locations, batch_idx, split):
+    def _testtube(self, pl_module, images, samples, targets, refs, gt_locations, batch_idx, masks, bbox_labels, split):
         for k in images:
             grid = torchvision.utils.make_grid(images[k])
             grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
@@ -107,7 +109,7 @@ class ImageLogger(Callback):
                 global_step=pl_module.global_step)
 
     # @rank_zero_only
-    def _wandb(self, pl_module, images, samples, targets, gt_locations, bbox_coords, batch_idx, split):
+    def _wandb(self, pl_module, images, samples, targets, refs, gt_locations, bbox_coords, masks, bbox_labels, batch_idx, split):
         print(f"Process {os.getpid()} in _wandb()")
         for k in images:
             grid = images[k]
@@ -116,7 +118,7 @@ class ImageLogger(Callback):
             tag = f"{split}/batch{batch_idx}_{k}"
             wandb.log({tag: image}, step=pl_module.global_step)
 
-        mse, ssim = calc_metrics(samples, targets)
+        mse, ssim, mse_bbox, ssim_bbox, feats_mse, samples_loc_probs, sc_gt_locations = self.image_evaluator.calc_metrics(samples, targets, refs, gt_locations, bbox_coords, masks, bbox_labels)
         # pl_module.log(f"{split}/mse", mse) # Don't set `on_step` or `on_epoch` since this is already inside `on_train_batch_end()` or `on_validation_batch_end`
         # pl_module.log(f"{split}/ssim", ssim)
         self.metrics[f"{split}/mse"].append(mse)
@@ -171,8 +173,9 @@ class ImageLogger(Callback):
                            pl_module.global_step, pl_module.current_epoch, batch_idx)
 
             logger_log_images = self.logger_log_images.get(logger, lambda *args, **kwargs: None)
-            gt_locations, bbox_coords = batch["matched_location_classes"], batch["bbox_coords"]
-            logger_log_images(pl_module, images, samples, targets, gt_locations, bbox_coords, batch_idx, split)
+            gt_locations, bbox_coords, masks, bbox_labels = batch["matched_location_classes"], batch["bbox_coords"], batch["mask"], batch["bbox_label"]
+            refs = torch.permute(batch["ref-image"], (0, 3, 1, 2))
+            logger_log_images(pl_module, images, samples, targets, refs, gt_locations, bbox_coords, masks, bbox_labels, batch_idx, split)
 
             if is_train:
                 pl_module.train()

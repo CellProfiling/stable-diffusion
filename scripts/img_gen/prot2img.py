@@ -145,7 +145,7 @@ def main(opt):
             break
     with torch.no_grad():
         with model.ema_scope():
-            batch_size = 1
+            batch_size = 16
             for i in range(0, len(examples), batch_size):
                 collated_examples = dict()
                 for k in examples[0].keys():

@@ -213,21 +213,39 @@ Thanks for open-sourcing!
 ```
 
 
-## Development
+## Development on HPA
 
 In general you can find some useful commands with parameters in the file `.vscode/launch.json`.
 
-### Train the autoencoder
+### Train an autoencoder
+This command train an autoencoder on the reference channels of the proteomics images:
 ```
-python main.py -t -b configs/autoencoder/autoencoder_kl_32x32x4_hpa.yaml --gpus=0,1,2,3
-```
-
-Prepare the BERT embedding for the protein sequences:
-```
-CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python create_bert_embedding_dataset.py 
+python main.py -t -b configs/autoencoder/hpa23__autoencoder__vq4__imputation__r__cells512_0.5.yaml --gpus=0,
 ```
 
-### Run the diffusion model
+This command train an autoencoder on the protein channel of the proteomics images:
+```
+python main.py -t -b configs/autoencoder/hpa23__autoencoder__vq4__imputation__p__cells512_0.5.yaml --gpus=0,
+```
+
+Model configuration:
+```
+  | Name            | Type                     | Params
+-------------------------------------------------------------
+0 | encoder         | Encoder                  | 22.3 M
+1 | decoder         | Decoder                  | 33.0 M
+2 | loss            | VQLPIPSWithDiscriminator | 17.5 M
+3 | quantize        | VectorQuantizer2         | 24.6 K
+4 | quant_conv      | Conv2d                   | 12    
+5 | post_quant_conv | Conv2d                   | 12    
+-------------------------------------------------------------
+58.1 M    Trainable params
+14.7 M    Non-trainable params
+72.8 M    Total params
+291.218   Total estimated model params size (MB)
+```
+
+### Train a diffusion model
 ```
 python main.py -t -b configs/latent-diffusion/hpa-ldm-kl-8.yaml --gpus=0,1,2,3 --scale_lr=False
 ```
@@ -248,7 +266,7 @@ Output:
 ```
 
 
-### Train the diffusion model (hybrid)
+### Train a diffusion model in hybrid mode
 
 In the hybrid mode, the diffusion model is conditioned on images (concat mode) and global embedding vector (e.g. location label, in cross attention mode).
 
@@ -295,20 +313,44 @@ Diffusion model ith spatial transformer:
 3 | cond_stage_model  | HPAClassEmbedder | 55.3 M
 -------------------------------------------------------
 ```
-### Train the diffusion model (reference image + densenet condition)
+### Train a diffusion model with reference channels and densenet embeddings as conditions
+This command train a diffusion model on one GPU:
 ```
-python main.py -t -b configs/latent-diffusion/ldm__densenet_all__splitcpp.yaml --gpus=0,1,2,3 --scale_lr=True -f __noema
+python main.py -t -b configs/latent-diffusion/hpa23__ldm__vq4__imputation__cells512_0.5.yaml --gpus=0,
 ```
 
+Specify the GPU IDs differently if you want to use GPUs other than just GPU 0. Add `-d` if you want to run in debug mode.
+
+Model configuration:
+```
+  | Name              | Type             | Params
+-------------------------------------------------------
+0 | model             | DiffusionWrapper | 397 M 
+1 | first_stage_model | VQModelInterface | 55.3 M
+2 | cond_stage_model  | HPAClassEmbedder | 55.3 M
+-------------------------------------------------------
+452 M     Trainable params
+55.3 M    Non-trainable params
+508 M     Total params
+2,032.752 Total estimated model params size (MB)
+```
 
 ### Perform inference / sampling
+This command use a pretrained model to perform inference on one GPU:
 ```
-python scripts/prot2img-densenet.py --config=configs/latent-diffusion/hpa-ldm-vq-4-hybrid-protein-densenet.yaml --checkpoint=/data/wei/stable-diffusion/logs/2023-05-23T16-11-15_hpa-ldm-vq-4-hybrid-protein-densenet/checkpoints/last.ckpt --scale=8 --outdir=/data/xikunz/stable-diffusion/logs/2023-05-23T16-11-15_hpa-ldm-vq-4-hybrid-protein-densenet/guide8 --fix-reference 
+CUDA_VISIBLE_DEVICES=0 python scripts/img_gen/prot2img.py --config=configs/latent-diffusion/hpa23__ldm__vq4__imputation__cells512_0.5-debug.yaml --checkpoint=/scratch/users/xikunz2/stable-diffusion/logs/2023-10-15T10-18-18_hpa2__ldm__vq4__densenet_all__splitcpp__cell256/checkpoints/last.ckpt --scale=2
 ```
 
-### About protein embedding
+Add `-d` if you want to run in debug mode.
 
-The protein embedding can be downloaded from uniprot:
+### About protein embeddings
+
+Prepare the BERT embedding for protein amino acid sequences:
+```
+CUDA_VISIBLE_DEVICES=0 CUDA_LAUNCH_BLOCKING=1 python create_bert_embedding_dataset.py 
+```
+
+ProtT5 embeddings can be downloaded from uniprot:
 ```bash
 wget https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/embeddings/UP000005640_9606/per-protein.h5
 ```

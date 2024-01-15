@@ -39,17 +39,28 @@ data:
     wrap: True
     shuffle_val_dataloader: True
     train:
-      target: ldm.data.hpa2.HPA
+      target: ldm.data.hpa23.HPA
       params:
+        group: 'train'
+        include_densenet_embedding: all
         channels: [1, 1, 1]
-        size: 256
-        crop: cells
+        rotate_and_flip: false
+        include_location: false
+        crop_size: 512
+        crop_type: cells
+        scale_factor: 0.5
+        return_info: false
     validation:
-      target: ldm.data.hpa2.HPA  # sample count: 716*10
+      target: ldm.data.hpa23.HPA
       params:
+        group: 'validation'
+        include_densenet_embedding: all
         channels: [1, 1, 1]
-        size: 256
-        crop: cells
+        include_location: false
+        crop_size: 512
+        crop_type: cells
+        scale_factor: 0.5
+        return_info: false
 
 lightning:
   callbacks:
@@ -69,4 +80,6 @@ lightning:
     accumulate_grad_batches: 2
     limit_train_batches: 4000
     limit_val_batches: 200
+    # limit_train_batches: 10
+    # limit_val_batches: 10
     val_check_interval: 1.0

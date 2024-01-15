@@ -18,7 +18,7 @@ except:
 from ldm.data import image_processing
 from ldm.data.serialize import TorchSerializedList
 
-HPA_DATA_ROOT = os.environ.get("HPA_DATA_ROOT", "/data/wei/hpa-webdataset-all-composite")
+HPA_DATA_ROOT = os.environ.get("HPA_DATA_ROOT", "/scratch/users/xikunz2/stable-diffusion/HPA")
 
 location_mapping = {"Actin filaments": 0, "Aggresome": 1, "Cell Junctions": 2, "Centriolar satellite": 3, "Centrosome": 4, "Cytokinetic bridge": 5, "Cytoplasmic bodies": 6, "Cytosol": 7, "Endoplasmic reticulum": 8, "Endosomes": 9, "Focal adhesion sites": 10, "Golgi apparatus": 11, "Intermediate filaments": 12, "Lipid droplets": 13, "Lysosomes": 14, "Microtubule ends": 15, "Microtubules": 16, "Midbody": 17, "Midbody ring": 18, "Mitochondria": 19, "Mitotic chromosome": 20, "Mitotic spindle": 21, "Nuclear bodies": 22, "Nuclear membrane": 23, "Nuclear speckles": 24, "Nucleoli": 25, "Nucleoli fibrillar center": 26, "Nucleoplasm": 27, "Peroxisomes": 28, "Plasma membrane": 29, "Rods & Rings": 30, "Vesicles": 31, "nan": 32}
 
@@ -173,7 +173,8 @@ class HPA:
         maskarray = np.array(mask)
         assert maskarray.shape == (image_height, image_width)
         # maskarray = cv2.resize(maskarray, (1024, 1024), interpolation=cv2.INTER_NEAREST)
-        sample = {"ori_image": np.copy(imarray), "ori_mask": maskarray, "hpa_index": hpa_index, "bbox_label": bbox_label}
+        # sample = {"ori_image": np.copy(imarray), "ori_mask": maskarray, "hpa_index": hpa_index, "bbox_label": bbox_label}
+        sample = {"hpa_index": hpa_index, "bbox_label": bbox_label}
         if self.crop_type == "cells":
             # imarray[maskarray != bbox_label] = 0
             # Crop the image to the cell and pad with zeros if the borders are out of the image
@@ -181,7 +182,7 @@ class HPA:
 
         assert image_processing.is_between_0_255(imarray)
         sample["condition_caption"] = f"{info['gene_names']}/{info['atlas_name']}"
-        sample["location_caption"] = f"{info['locations']}"
+        sample["location_caption"] = str(info['locations'])
         if self.include_location:
             sample["location_classes"] = one_hot_encode_locations(info["locations"], location_mapping)
         sample["matched_location_classes"] = one_hot_encode_locations(info["locations"], matched_location_mapping)
@@ -189,14 +190,16 @@ class HPA:
         transformed = self.preprocessor(image=imarray, mask=maskarray)
         assert transformed["image"].shape == (self.final_size, self.final_size, 4)
         assert transformed["mask"].shape == (self.final_size, self.final_size)
-        prot_image = transformed["image"][:, :, self.channels]
+        if (transformed["mask"] == bbox_label).sum() > 0: # Cell still in augmented image
+            imarray = transformed["image"]
+            maskarray = transformed["mask"]
+        prot_image = imarray[:, :, self.channels]
         prot_image = image_processing.convert_to_minus1_1(prot_image)
-        ref_image = transformed["image"][:, :, [0, 3, 2]] # reference channels: MT, ER, DAPI
+        ref_image = imarray[:, :, [0, 3, 2]] # reference channels: MT, ER, DAPI
         ref_image = image_processing.convert_to_minus1_1(ref_image)
-        mask = transformed["mask"]
-        top, left, bottom, right = image_processing.get_bbox_from_mask(mask, bbox_label)
+        top, left, bottom, right = image_processing.get_bbox_from_mask(maskarray, bbox_label)
         bbox_coords = np.array([top, left, bottom - top, right - left])
-        sample.update({"image": prot_image, "ref-image": ref_image, "mask": mask, "bbox_coords": bbox_coords})
+        sample.update({"image": prot_image, "ref-image": ref_image, "mask": maskarray, "bbox_coords": bbox_coords})
         if self.return_info:
             sample["info"] = info
 
