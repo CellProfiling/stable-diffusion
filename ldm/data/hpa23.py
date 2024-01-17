@@ -36,7 +36,7 @@ def decode_one_hot_locations(locations_encoding, idx_to_location):
 
 class HPA:
 
-    def __init__(self, group='train', split="imputation", channels=None, include_location=False, include_densenet_embedding=False, return_info=False, rotate_and_flip=False, use_uniprot_embedding=False, crop_size=512, crop_type="cells", scale_factor=0.5):
+    def __init__(self, group='train', split="imputation", channels=None, include_location=False, include_densenet_embedding=False, return_info=False, rotate_and_flip=False, include_seq_embedding=False, crop_size=512, crop_type="cells", scale_factor=0.5):
         self.metadata = pd.read_csv(f"{HPA_DATA_ROOT}/v23/IF-image-w-splits.csv", index_col=0)
         self.total_length = len(self.metadata)
         cell_masks_metadata = pd.read_csv(f"{HPA_DATA_ROOT}/v23/IF-cells.csv")
@@ -48,7 +48,8 @@ class HPA:
         image_ids = set(self.metadata.loc[self.indexes, "image_id"])
         self.cell_masks_metadata = cell_masks_metadata[cell_masks_metadata['ID'].isin(image_ids)]
 
-        self.use_uniprot_embedding = use_uniprot_embedding
+        assert include_seq_embedding in [False, "prott5-swissprot", "prott5-homo-sapiens"]
+        self.include_seq_embedding = include_seq_embedding
         assert include_densenet_embedding in ["all", "flt", False]
 
         if include_densenet_embedding:
@@ -83,13 +84,13 @@ class HPA:
     
     def prepare_densenet_embeds(self, train_indexes, valid_indexes, include_densenet_embedding):
         # Load all densenet embeddings
-        f = h5py.File("/scratch/groups/emmalu/densenet_image_embedding/densenet_embeddings.h5")
-        imageid_to_embedidx = dict()
-        densenet_embeddings = []
-        for i, imageid in enumerate(f.keys()):
-            imageid_to_embedidx[imageid] = i
-            densenet_embeddings.append(f[imageid])
-        densenet_embeddings = np.stack(densenet_embeddings)
+        with h5py.File("/scratch/groups/emmalu/densenet_image_embedding/densenet_embeddings.h5") as f:
+            imageid_to_embedidx = dict()
+            densenet_embeddings = []
+            for i, imageid in enumerate(f.keys()):
+                imageid_to_embedidx[imageid] = i
+                densenet_embeddings.append(f[imageid])
+            densenet_embeddings = np.stack(densenet_embeddings)
 
         if include_densenet_embedding == "all":
             nonvalid_metadata = self.metadata[~self.metadata.index.isin(valid_indexes)]
@@ -158,15 +159,10 @@ class HPA:
         if self.return_info:
             sample["info"] = info
 
-        if self.use_uniprot_embedding:
-            # uniprot_indexes = []
-            with h5py.File(self.use_uniprot_embedding, "r") as file:
-                assert len(info['sequences']) > 0
-                for seq in info['sequences']:
-                    prot_id = seq.split('|')[1]
-                    if prot_id in file:
-                        sample['prot_id'] = prot_id
-                        sample['embed'] = np.array(file[prot_id])
+        if self.include_seq_embedding:
+            prott5_version = self.include_seq_embedding[len("prott5-"):]
+            with h5py.File(f"/scratch/groups/emmalu/protT5_embeddings/{prott5_version}-per-protein_HPA_agg.h5", "r") as file:
+                sample["seq_embed"] = np.array(file[info["ensembl_ids"]])
         if self.include_densenet_embedding:
             if hpa_index not in self.same_prot_embedidcs or not self.same_prot_embedidcs[hpa_index]:
                 print(f"The average densenet embedding to use for image {hpa_index} of gene {info['gene_names']} is zero.")
