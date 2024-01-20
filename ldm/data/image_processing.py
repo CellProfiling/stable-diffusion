@@ -108,14 +108,15 @@ def get_bbox_from_mask(mask, bbox_label):
     # Identify the positions of the object in the mask
     positions = np.where(mask == bbox_label)
 
-    # Make sure the object is not in the mask, return None or handle as needed
-    assert len(positions[0]) > 0 and len(positions[1]) > 0
+    if len(positions[0]) > 0 and len(positions[1]) > 0: # The object is in the mask
 
-    # Calculate bounding box
-    top = np.min(positions[0])
-    left = np.min(positions[1])
-    bottom = np.max(positions[0])
-    right = np.max(positions[1])
+        # Calculate bounding box
+        top = np.min(positions[0])
+        left = np.min(positions[1])
+        bottom = np.max(positions[0])
+        right = np.max(positions[1])
+    else:
+        top = left = bottom = right = 0
     return top, left, bottom, right
 
 

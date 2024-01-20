@@ -114,6 +114,7 @@ class HPA:
         return len(self.cell_masks_metadata) if self.crop_type == "cells" else len(self.indexes)
 
     def __getitem__(self, i):
+        # i = 1960
         if self.crop_type == "cells":
             cell = self.cell_masks_metadata.iloc[i]
             # cell = self.cell_masks_metadata.loc[1214]
@@ -130,9 +131,10 @@ class HPA:
         maskarray = np.array(mask)
         assert maskarray.shape == (image_height, image_width)
         # sample = {"ori_image": np.copy(imarray), "ori_mask": maskarray, "hpa_index": hpa_index, "bbox_label": bbox_label}
-        sample = {"hpa_index": hpa_index, "bbox_label": bbox_label}
+        sample = {"hpa_index": hpa_index}
         if self.crop_type == "cells":
-            # imarray[maskarray != bbox_label] = 0
+            sample["bbox_label"] = bbox_label
+            assert (maskarray == bbox_label).sum() > 0
             # Crop the image to the cell and pad with zeros if the borders are out of the image
             imarray, maskarray = image_processing.crop_around_object(imarray, maskarray, bbox_label, self.crop_size)
 
@@ -146,9 +148,8 @@ class HPA:
         transformed = self.preprocessor(image=imarray, mask=maskarray)
         assert transformed["image"].shape == (self.final_size, self.final_size, 4)
         assert transformed["mask"].shape == (self.final_size, self.final_size)
-        if (transformed["mask"] == bbox_label).sum() > 0: # Cell still in augmented image
-            imarray = transformed["image"]
-            maskarray = transformed["mask"]
+        imarray = transformed["image"]
+        maskarray = transformed["mask"]
         prot_image = imarray[:, :, self.channels]
         prot_image = image_processing.convert_to_minus1_1(prot_image)
         ref_image = imarray[:, :, [0, 3, 2]] # reference channels: MT, ER, DAPI

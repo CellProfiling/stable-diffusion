@@ -111,7 +111,7 @@ model:
 data:
   target: ldm.data.base.DataModuleFromConfig
   params:
-    batch_size: 8 # We can use a maximum batch size of 8 on a single GPU; doesn't need to change this when using different numbers of GPUs
+    batch_size: 1 # We can use a maximum batch size of 8 on a single GPU; doesn't need to change this when using different numbers of GPUs
     num_workers: 0 # Number of dataloader subprocesses per GPU process (if using DDP); set it to 1 or 2 in this case
     wrap: False
     use_worker_init_fn: true
@@ -171,8 +171,8 @@ lightning:
   trainer:
     benchmark: True
     # accelerator: dp # need to change to dp because the default ddp will free the training
-    limit_train_batches: 4000
-    limit_val_batches: 200
-    # limit_train_batches: 10
-    # limit_val_batches: 10
+    # limit_train_batches: 4000
+    # limit_val_batches: 200
+    limit_train_batches: 10
+    limit_val_batches: 10
     val_check_interval: 1.0
