@@ -104,6 +104,14 @@ def get_parser(**parser_kwargs):
         default=True,
         help="scale base-lr by ngpu * batch_size * n_accumulate",
     )
+    parser.add_argument(
+        "--streaming",
+        type=str2bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help="whether the job is running on mosaic's cluster or not",
+    )
     return parser
 
 
