@@ -8,68 +8,28 @@ from omegaconf import OmegaConf
 from PIL import Image
 from tqdm import tqdm
 import numpy as np
-from sklearn.metrics import average_precision_score
 import torch
-from main import instantiate_from_config
-from ldm.data.hpa2 import matched_idx_to_location, decode_one_hot_locations
-from ldm.data import image_processing
-from ldm.models.diffusion.ddim import DDIMSampler
-from ldm.parse import str2bool
-from ldm.util import instantiate_from_config
-from ldm.evaluation.metrics import ImageEvaluator
-# import yaml
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
+
+from ldm.data.hpa2 import matched_idx_to_location, decode_one_hot_locations
+from ldm.data import hpa23
+from ldm.models.diffusion.ddim import DDIMSampler
+from ldm.parse import str2bool
+from ldm.util import instantiate_from_config
+from ldm.evaluation import metrics
 
 """
 Command example: CUDA_VISIBLE_DEVICES=0 python -m pdb scripts/img_gen/prot2img.py --config=configs/latent-diffusion/hpa23__ldm__vq4__imputation__cells512_0.5-debug.yaml --checkpoint=/scratch/users/xikunz2/stable-diffusion/logs/2023-10-15T10-18-18_hpa2__ldm__vq4__densenet_all__splitcpp__cell256/checkpoints/last.ckpt --scale=2 -d
 
 """
 
-# data_config_yaml = """
-# data:
-#   target: main.DataModuleFromConfig
-#   params:
-#     batch_size: 8
-#     num_workers: 16
-#     wrap: false
-#     train:
-#       target: ldm.data.hpa.HPACombineDatasetMetadataInMemory
-#       params:
-#         seed: 123
-#         group: train
-#         train_split_ratio: 0.95
-#         cache_file: /data/wei/hpa-webdataset-all-composite/HPACombineDatasetMetadataInMemory-256-t5.pickle
-#         channels:
-#         - 1
-#         - 1
-#         - 1
-#         filter_func: has_location
-#         rotate_and_flip: true
-#         include_location: true
-#         use_uniprot_embedding: /data/wei/stable-diffusion/data/per-protein.h5
-#     validation:
-#       target: ldm.data.hpa.HPACombineDatasetMetadataInMemory
-#       params:
-#         seed: 123
-#         group: validation
-#         train_split_ratio: 0.95
-#         cache_file: /data/wei/hpa-webdataset-all-composite/HPACombineDatasetMetadataInMemory-256-t5.pickle
-#         channels:
-#         - 1
-#         - 1
-#         - 1
-#         filter_func: has_location
-#         include_location: true
-#         use_uniprot_embedding: /data/wei/stable-diffusion/data/per-protein.h5
-# """
-
 
 def main(opt):
     # now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    split = "train"
+    split = "validation"
     if opt.name:
         name = opt.name
     else:
@@ -106,7 +66,7 @@ def main(opt):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
     sampler = DDIMSampler(model)
-    image_evaluator = ImageEvaluator(device=device)
+    image_evaluator = metrics.ImageEvaluator(device=device)
 
     # Create a mapping from protein to all its possible locations
     if opt.fix_reference:
@@ -120,7 +80,7 @@ def main(opt):
 
     ref = None
     os.makedirs(opt.outdir, exist_ok=True)
-    count_per_loc, max_count = float("inf"), 10
+    count_per_loc, max_count = 1, float("inf")
     # np.random.seed(123)
     np.random.seed(12)
     idcs = list(range(len(data.datasets[split])))
@@ -128,7 +88,7 @@ def main(opt):
     examples, ref_images, predicted_images, gt_images, all_bbox_coords = [], [], [], [], []
     loc_counter = defaultdict(int)
     locations, conditions = [], []
-    mse_list, ssim_list, mse_bbox_list, ssim_bbox_list, feats_mse_list, samples_loc_probs_list, sc_gt_locations_list = [[] for _ in range(7)]
+    all_mse, all_ssim, all_mse_bbox, all_ssim_bbox, all_feats_mse, all_samples_loc_probs, all_sc_gt_locations = [[] for _ in range(7)]
     for i in tqdm(idcs, desc=f"Finding examples with specific locations"):
         # print(f"\nExample {i}: ", end="")
         sample = data.datasets[split][i]
@@ -177,13 +137,13 @@ def main(opt):
 
                 gt_locations, bbox_coords = collated_examples["matched_location_classes"], collated_examples["bbox_coords"]
                 mse, ssim, mse_bbox, ssim_bbox, feats_mse, samples_loc_probs, sc_gt_locations = image_evaluator.calc_metrics(samples=x_samples_ddim, targets=torch.permute(collated_examples['image'], (0, 3, 1, 2)), refs=torch.permute(ref, (0, 3, 1, 2)), gt_locations=gt_locations, bbox_coords=bbox_coords, masks=collated_examples["mask"], bbox_labels=collated_examples["bbox_label"])
-                mse_list.append(mse)
-                ssim_list.append(ssim)
-                mse_bbox_list.append(mse_bbox)
-                ssim_bbox_list.append(ssim_bbox)
-                feats_mse_list.append(feats_mse)
-                samples_loc_probs_list.append(samples_loc_probs)
-                sc_gt_locations_list.append(sc_gt_locations)
+                all_mse.append(mse)
+                all_ssim.append(ssim)
+                all_mse_bbox.append(mse_bbox)
+                all_ssim_bbox.append(ssim_bbox)
+                all_feats_mse.append(feats_mse)
+                all_samples_loc_probs.append(samples_loc_probs)
+                all_sc_gt_locations.append(sc_gt_locations)
                 all_bbox_coords.append(bbox_coords.cpu().numpy())
 
                 prot_image = torch.clamp((collated_examples['image']+1.0)/2.0,
@@ -239,13 +199,13 @@ def main(opt):
             # if opt.debug and count >= debug_count - 1:
             #     break
             # count += 1
-            mse_list = np.concatenate(mse_list, axis=0)
-            ssim_list = np.concatenate(ssim_list, axis=0)
-            mse_bbox_list = np.concatenate(mse_bbox_list, axis=0)
-            ssim_bbox_list = np.concatenate(ssim_bbox_list, axis=0)
-            feats_mse_list = np.concatenate(feats_mse_list, axis=0)
-            samples_loc_probs_list = np.concatenate(samples_loc_probs_list, axis=0)
-            sc_gt_locations_list = np.concatenate(sc_gt_locations_list, axis=0)
+            all_mse = np.concatenate(all_mse, axis=0)
+            all_ssim = np.concatenate(all_ssim, axis=0)
+            all_mse_bbox = np.concatenate(all_mse_bbox, axis=0)
+            all_ssim_bbox = np.concatenate(all_ssim_bbox, axis=0)
+            all_feats_mse = np.concatenate(all_feats_mse, axis=0)
+            all_samples_loc_probs = np.concatenate(all_samples_loc_probs, axis=0)
+            all_sc_gt_locations = np.concatenate(all_sc_gt_locations, axis=0)
             ref_images = np.concatenate(ref_images, axis=0)
             predicted_images = np.concatenate(predicted_images, axis=0)
             gt_images = np.concatenate(gt_images, axis=0)
@@ -287,12 +247,12 @@ def main(opt):
                     title = f"example {i}\n{conditions[i]}"
                 elif j == 1:
                     image = predicted_images[i].mean(axis=2)
-                    samples_locations = (samples_loc_probs_list[i] > 0.5).astype(int)
+                    samples_locations = (all_samples_loc_probs[i] > 0.5).astype(int)
                     samples_locations = decode_one_hot_locations(samples_locations, matched_idx_to_location)
-                    title = f"MSE:{mse_list[i]:.2g},SSIM:{ssim_list[i]:.2g},featMSE:{feats_mse_list[i]:.2g}\nbboxMSE:{mse_bbox_list[i]:.2g},bboxSSIM:{ssim_bbox_list[i]:.2g},\nsc:{samples_locations}"
+                    title = f"MSE:{all_mse[i]:.2g},SSIM:{all_ssim[i]:.2g},featMSE:{all_feats_mse[i]:.2g}\nbboxMSE:{all_mse_bbox[i]:.2g},bboxSSIM:{all_ssim_bbox[i]:.2g},\nsc:{samples_locations}"
                 else:
                     image = gt_images[i].mean(axis=2)
-                    sc_gt_locations = decode_one_hot_locations(sc_gt_locations_list[i], matched_idx_to_location)
+                    sc_gt_locations = decode_one_hot_locations(all_sc_gt_locations[i], matched_idx_to_location)
                     gt_locations = decode_one_hot_locations(locations[i], matched_idx_to_location)
                     title = f"image:{gt_locations}\nsc:{sc_gt_locations}"
                 # print(f"max: {image.max()}, min:{image.min()}")
@@ -309,15 +269,14 @@ def main(opt):
                 # plot text in each image with locations
                 # plt.text(0, 20, locations[i], color='white', fontsize=10)
                 ax.set_title(title)
-    mse_mean = np.mean(mse_list)
-    ssim_mean = np.mean(ssim_list)
-    mse_bbox_mean = np.mean(mse_bbox_list)
-    ssim_bbox_mean = np.mean(ssim_bbox_list)
-    features_mse_mean = np.mean(feats_mse_list)
+    mse_mean = np.mean(all_mse)
+    ssim_mean = np.mean(all_ssim)
+    mse_bbox_mean = np.mean(all_mse_bbox)
+    ssim_bbox_mean = np.mean(all_ssim_bbox)
     # loc_mean_avg_precision = average_precision_score(sc_gt_locations_list, samples_loc_probs_list)
-    samples_locations = (np.stack(samples_loc_probs_list, axis=0) > 0.5).astype(int)
-    loc_acc = (np.stack(sc_gt_locations_list, axis=0) == samples_locations).all(axis=1).mean()
-    fig.suptitle(f'{split},guid={opt.scale},steps={opt.steps},MSE:{mse_mean:.2g},SSIM:{ssim_mean:.2g},bboxMSE:{mse_bbox_mean:.2g},bboxSSIM:{ssim_bbox_mean:.2g},featMSE:{features_mse_mean:.2g},locAcc:{loc_acc:.2g}', y=0.999)
+    loc_acc, loc_macrof1, loc_microf1, features_mse_mean = metrics.calc_localization_metrics(all_samples_loc_probs, all_sc_gt_locations, all_feats_mse)
+    # fig.suptitle(f'{split},guid={opt.scale},steps={opt.steps},MSE:{mse_mean:.2g},SSIM:{ssim_mean:.2g},bboxMSE:{mse_bbox_mean:.2g},bboxSSIM:{ssim_bbox_mean:.2g},featMSE:{features_mse_mean:.2g},locAcc:{loc_acc:.2g}', y=0.999)
+    fig.suptitle(f'{split},guid={opt.scale},steps={opt.steps},locAcc:{loc_acc:.2g},locMacroF1:{loc_macrof1:.2g},locMicroF1:{loc_microf1:.2g}', y=0.999)
     fig.tight_layout()
     fig.savefig(os.path.join(opt.outdir, f'predicted-image-grid-s{opt.scale}.png'))
 

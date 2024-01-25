@@ -169,8 +169,9 @@ lightning:
   trainer:
     benchmark: True
     # accelerator: dp # need to change to dp because the default ddp will free the training
-    limit_train_batches: 4000
-    limit_val_batches: 200
-    # limit_train_batches: 10
-    # limit_val_batches: 10
+    # limit_train_batches: 4000
+    # limit_val_batches: 200
+    limit_train_batches: 10
+    limit_val_batches: 10
     val_check_interval: 1.0
+    max_epochs: 2
