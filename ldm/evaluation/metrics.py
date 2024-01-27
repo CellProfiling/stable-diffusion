@@ -1,3 +1,5 @@
+import numpy as np
+import sklearn.metrics
 import torch
 import torch.nn.functional as F
 import torchmetrics
@@ -84,7 +86,19 @@ class ImageEvaluator:
         return mse, ssim, mse_bbox, ssim_bbox, feats_mse, samples_loc_probs, sc_gt_locations
 
 
-
+def calc_localization_metrics(samples_loc_probs, sc_gt_locations, feats_mse):
+    any_loc = sc_gt_locations[:, :-1].any(axis=1)
+    sc_gt_locations = sc_gt_locations[any_loc]
+    samples_locations = samples_loc_probs[any_loc] > 0.5
+    samples_locations = samples_locations.astype(int)
+    feats_mse_mean = feats_mse[any_loc].mean()
+    if len(sc_gt_locations) == 0:
+        loc_acc = loc_macrof1 = loc_microf1 = float("nan")
+    else:
+        loc_acc = (samples_locations == sc_gt_locations).all(axis=1).mean()
+        loc_macrof1 = sklearn.metrics.f1_score(sc_gt_locations, samples_locations, average='macro')
+        loc_microf1 = sklearn.metrics.f1_score(sc_gt_locations, samples_locations, average='micro')
+    return loc_acc, loc_macrof1, loc_microf1, feats_mse_mean
 
 
 if __name__ == "__main__":

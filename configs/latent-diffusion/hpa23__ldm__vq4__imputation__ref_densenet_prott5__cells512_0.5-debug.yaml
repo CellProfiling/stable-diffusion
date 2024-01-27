@@ -45,14 +45,14 @@ model:
         use_scale_shift_norm: True
         resblock_updown: True
         use_spatial_transformer: True
-        context_dim: 1024
+        context_dim: 2048
 
     first_stage_config:
       target: ldm.models.autoencoder.VQModelInterface
       params:
         embed_dim: 3
         n_embed: 8192
-        # autoencoder for the reference + protein channel
+        # autoencoder for the protein channel
         ckpt_path: /scratch/users/xikunz2/stable-diffusion/logs/2023-10-11T23-37-05_hpa2__autoencoder__vq4__p__cells256/checkpoints/last.ckpt
         ddconfig:
           double_z: false
@@ -86,7 +86,7 @@ model:
           params:
             embed_dim: 3
             n_embed: 8192
-            # autoencoder for the reference channel
+            # autoencoder for the reference channels
             ckpt_path: /scratch/users/xikunz2/stable-diffusion/logs/2023-10-12T20-32-07_hpa2__autoencoder__vq4__r__cells256/checkpoints/last.ckpt
             ddconfig:
               double_z: false
@@ -111,7 +111,7 @@ model:
 data:
   target: ldm.data.base.DataModuleFromConfig
   params:
-    batch_size: 8 # We can use a maximum batch size of 8 on a single GPU; doesn't need to change this when using different numbers of GPUs
+    batch_size: 1 # We can use a maximum batch size of 8 on a single GPU; doesn't need to change this when using different numbers of GPUs
     num_workers: 0 # Number of dataloader subprocesses per GPU process (if using DDP); set it to 1 or 2 in this case
     wrap: False
     use_worker_init_fn: true
@@ -121,6 +121,7 @@ data:
       params:
         group: 'train'
         include_densenet_embedding: all
+        include_seq_embedding: prott5-swissprot
         channels: [1, 1, 1]
         rotate_and_flip: false
         include_location: false
@@ -133,6 +134,7 @@ data:
       params:
         group: 'validation'
         include_densenet_embedding: all
+        include_seq_embedding: prott5-swissprot
         channels: [1, 1, 1]
         include_location: false
         crop_size: 512
@@ -169,8 +171,9 @@ lightning:
   trainer:
     benchmark: True
     # accelerator: dp # need to change to dp because the default ddp will free the training
-    limit_train_batches: 4000
-    limit_val_batches: 200
-    # limit_train_batches: 10
-    # limit_val_batches: 10
+    # limit_train_batches: 4000
+    # limit_val_batches: 200
+    limit_train_batches: 10
+    limit_val_batches: 10
     val_check_interval: 1.0
+    max_epochs: 2

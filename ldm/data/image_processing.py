@@ -108,14 +108,15 @@ def get_bbox_from_mask(mask, bbox_label):
     # Identify the positions of the object in the mask
     positions = np.where(mask == bbox_label)
 
-    # Make sure the object is not in the mask, return None or handle as needed
-    assert len(positions[0]) > 0 and len(positions[1]) > 0
+    if len(positions[0]) > 0 and len(positions[1]) > 0: # The object is in the mask
 
-    # Calculate bounding box
-    top = np.min(positions[0])
-    left = np.min(positions[1])
-    bottom = np.max(positions[0])
-    right = np.max(positions[1])
+        # Calculate bounding box
+        top = np.min(positions[0])
+        left = np.min(positions[1])
+        bottom = np.max(positions[0])
+        right = np.max(positions[1])
+    else:
+        top = left = bottom = right = 0
     return top, left, bottom, right
 
 
@@ -200,8 +201,7 @@ def load_intensity_rescaled_image(image_id):
     full_res_image = np.array(Image.open(f'{data_dir}/{image_id}.tif'))
     assert is_between_0_255(full_res_image)
     return full_res_image
-
-
+    
 def load_image(datasource, image_id, channels):
     if datasource == "jump":
         data_dir = "/scratch/groups/emmalu/JUMP/processed"
@@ -209,35 +209,28 @@ def load_image(datasource, image_id, channels):
         data_dir = "/scratch/groups/emmalu/HPA_rescaled"
     else:
         raise NotImplementedError
-    
-
     if datasource == "jump":
         imarrays = []
         for i in range(3):
             if i >= len(channels):
                 #if only two reference channels than last channel will just be array of 0s
-                #Will call this channel "0" in .yaml fil
-                #Note that channel "0" must come last
+                #Will call this channel “0" in .yaml fil
+                #Note that channel “0" must come last
                 imarrays.append([np.zeros(imarrays[0][0].shape, dtype=np.uint8)])
             else:
-                image_path = image_id + f"p01-ch{channels[i]}sk1fk1fl1.png"
+                image_path = image_id + f'p01-ch{channels[i]}sk1fk1fl1.png'
                 imarrays.append([np.array(Image.open(f'{data_dir}/{image_path}'))])
-
         #combine channels into single multichannel image
         image = np.concatenate(imarrays, axis=0)
         image = np.transpose(image, (1, 2, 0)) #need num channels to be last dimension
-    
     elif datasource == "hpa":
         image_path = image_id + ".tif"
         imarray = np.array(Image.open(f'{data_dir}/{image_path}'))
         image = imarray[:, :, channels]
-
         for i in range(3-image.shape[2]):
             z = np.array([np.zeros(image.shape[:2])]).transpose((1,2,0)).astype(np.uint8)
             image = np.append(image, z, axis=2)
-    
     assert image.ndim == 3
     assert image.shape[2] == 3
     assert is_between_0_255(image)
-
     return image

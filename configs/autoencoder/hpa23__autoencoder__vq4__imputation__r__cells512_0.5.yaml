@@ -42,7 +42,6 @@ data:
       target: ldm.data.hpa23.HPA
       params:
         group: 'train'
-        include_densenet_embedding: all
         channels: [0, 3, 2] # replace the green channel with ER
         rotate_and_flip: false
         include_location: false
@@ -54,7 +53,6 @@ data:
       target: ldm.data.hpa23.HPA
       params:
         group: 'validation'
-        include_densenet_embedding: all
         channels: [0, 3, 2] # replace the green channel with ER
         include_location: false
         crop_size: 512

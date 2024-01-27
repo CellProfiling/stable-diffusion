@@ -1,16 +1,17 @@
 import argparse, os, sys, datetime, glob, socket, subprocess
 from contextlib import redirect_stderr, redirect_stdout
-import pytorch_lightning as pl
 
-from packaging import version
+from memory_profiler import profile
 from omegaconf import OmegaConf
-
+from packaging import version
+import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
+from streaming import StreamingDataset
+from torch.utils.data import DataLoader
 
 from ldm.parse import get_parser, separate_args
 from ldm.util import instantiate_from_config, send_message_to_slack
-from memory_profiler import profile
 
 
 # @profile
@@ -187,15 +188,34 @@ def main(opt, logdir, nowname):
     trainer.logdir = logdir  ###
 
     # data
-    data = instantiate_from_config(config.data)
-    # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
-    # calling these ourselves should not be necessary but it is.
-    # lightning still takes care of proper multiprocessing though
-    data.prepare_data()
-    data.setup()
-    print("#### Data #####")
-    for k in data.datasets:
-        print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
+    if opt.streaming:
+        # Remote directory (S3 or local filesystem) where dataset is stored
+        remote_dir = 's3://ai-residency-stanford-subcellgenai/super_multiplex_cell/data/hpa23_rescaled_mds'
+
+        # Local directory where dataset is cached during operation
+        local_dir = '/scratch/users/xikunz2/stable-diffusion/data/hpa23_rescaled_mds'
+
+        # Create PyTorch DataLoader
+        if opt.debug:
+            train_split = valid_split = test_split = 'train_subset'
+        else:
+            train_split, valid_split, test_split = 'train', 'validation', 'test'
+        train_dataset = StreamingDataset(local=f"{local_dir}/train", remote=f"{remote_dir}/{train_split}", split=None, shuffle=True)
+        train_dataloader = DataLoader(train_dataset)
+        valid_dataset = StreamingDataset(local=f"{local_dir}/validation", remote=f"{remote_dir}/{valid_split}", split=None, shuffle=False)
+        valid_dataloader = DataLoader(valid_dataset)
+        test_dataset = StreamingDataset(local=f"{local_dir}/test", remote=f"{remote_dir}/{test_split}", split=None, shuffle=False)
+        test_dataloader = DataLoader(test_dataset)
+    else:
+        data = instantiate_from_config(config.data)
+        # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
+        # calling these ourselves should not be necessary but it is.
+        # lightning still takes care of proper multiprocessing though
+        data.prepare_data()
+        data.setup()
+        print("#### Data #####")
+        for k in data.datasets:
+            print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
 
     # configure learning rate
     bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
@@ -243,14 +263,20 @@ def main(opt, logdir, nowname):
     # run
     if opt.train:
         try:
-            trainer.fit(model, data)
+            if opt.streaming:
+                trainer.fit(model, train_dataloader, valid_dataloader)
+            else:
+                trainer.fit(model, data)
         except Exception:
             melk()
             if "log_to_slack" in lightning_config.callbacks.image_logger.params and lightning_config.callbacks.image_logger.params.log_to_slack:
                 send_message_to_slack("Oops, the diffusion model training process has stopped unexpectedly")
             raise
     if not opt.no_test and not trainer.interrupted:
-        trainer.test(model, data)
+        if opt.mosaic:
+            trainer.test(model, test_dataloader)
+        else:
+            trainer.test(model, data)
     # except Exception:
     #     if opt.debug and trainer.global_rank == 0:
     #         try:

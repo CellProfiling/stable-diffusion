@@ -93,7 +93,7 @@ def get_parser(**parser_kwargs):
         "-l",
         "--logdir",
         type=str,
-        default=f"{os.environ.get('MYDATA')}/stable-diffusion" if os.environ.get('MYDATA') else f"/data/{os.environ.get('USER')}/stable-diffusion",
+        default=f"{os.environ.get('MYDATA')}/stable-diffusion" if os.environ.get('MYDATA') else f"/scratch/users/{os.environ.get('USER')}/stable-diffusion",
         help="directory for logging dat shit",
     )
     parser.add_argument(
@@ -103,6 +103,14 @@ def get_parser(**parser_kwargs):
         const=True,
         default=True,
         help="scale base-lr by ngpu * batch_size * n_accumulate",
+    )
+    parser.add_argument(
+        "--streaming",
+        type=str2bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help="whether the job is running on mosaic's cluster or not",
     )
     return parser
 

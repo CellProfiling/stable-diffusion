@@ -1042,7 +1042,7 @@ class LatentDiffusion(DDPM):
         
         # Add training dropout for classifier-free guidance
         # See issue here https://github.com/CompVis/latent-diffusion/issues/139
-        if self.training and self.cond_dropout != 0 and bool(torch.randn(1)[0] < self.cond_dropout):
+        if "c_crossattn" in cond and self.training and self.cond_dropout != 0 and bool(torch.randn(1)[0] < self.cond_dropout):
             # cond = {k: [torch.zeros_like(v) for v in cond[k]] for k in cond.keys()}
             # Keep the c_concat and set c_crossattn to zero
             cond['c_crossattn'] = [torch.zeros_like(v) for v in cond['c_crossattn']]
@@ -1349,7 +1349,11 @@ class LatentDiffusion(DDPM):
             c = self.cond_stage_model(batch)
             # uc = {'c_concat': [torch.zeros_like(v) for v in c['c_concat']], 'c_crossattn': [torch.zeros_like(v) for v in c['c_crossattn']]} 
             # Keep the c_concat and set c_crossattn to zero
-            uc = {'c_concat': c['c_concat'], 'c_crossattn': [torch.zeros_like(v) for v in c['c_crossattn']]} 
+            uc = dict()
+            if "c_concat" in c:
+                uc['c_concat'] = c['c_concat']
+            if "c_crossattn" in c:
+                uc['c_crossattn'] = [torch.zeros_like(v) for v in c['c_crossattn']]
 
             # shape = (c['c_concat'][0].shape[1],)+c['c_concat'][0].shape[2:]
             # z_denoise_row = None

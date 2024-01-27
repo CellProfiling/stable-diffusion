@@ -217,7 +217,7 @@ Thanks for open-sourcing!
 
 In general you can find some useful commands with parameters in the file `.vscode/launch.json`.
 
-### Train an autoencoder
+### Train autoencoders
 This command train an autoencoder on the reference channels of the proteomics images:
 ```
 python main.py -t -b configs/autoencoder/hpa23__autoencoder__vq4__imputation__r__cells512_0.5.yaml --gpus=0,
@@ -245,78 +245,33 @@ Model configuration:
 291.218   Total estimated model params size (MB)
 ```
 
-### Train a diffusion model
+### Train a diffusion model with reference channels as conditions
+This command train a diffusion model on one GPU:
 ```
-python main.py -t -b configs/latent-diffusion/hpa-ldm-kl-8.yaml --gpus=0,1,2,3 --scale_lr=False
+python main.py -t -b configs/latent-diffusion/hpa23__ldm__vq4__imputation__ref__cells512_0.5.yaml --gpus=0,
 ```
 
-Output:
+Specify the GPU IDs differently if you want to use GPUs other than just GPU 0. Add `-d` if you want to run in debug mode.
+
+Model configuration:
 ```
   | Name              | Type             | Params
 -------------------------------------------------------
 0 | model             | DiffusionWrapper | 294 M 
-1 | model_ema         | LitEma           | 0     
-2 | first_stage_model | AutoencoderKL    | 83.7 M
-3 | cond_stage_model  | ClassEmbedder    | 16.9 K
+1 | first_stage_model | VQModelInterface | 55.3 M
+2 | cond_stage_model  | HPAClassEmbedder | 55.3 M
 -------------------------------------------------------
- 294 M     Trainable params
-83.7 M    Non-trainable params
-378 M     Total params
-1,514.551 Total estimated model params size (MB)
-```
-
-
-### Train a diffusion model in hybrid mode
-
-In the hybrid mode, the diffusion model is conditioned on images (concat mode) and global embedding vector (e.g. location label, in cross attention mode).
-
-
-```
-python main.py -t -b configs/latent-diffusion/hpa-ldm-vq-4-hybrid.yaml --gpus=0,1,2,3 --scale_lr=False
-```
-
-
-```
-   | Name              | Type              | Params
---------------------------------------------------------
-0 | model             | DiffusionWrapper  | 294 M 
-1 | model_ema         | LitEma            | 0     
-2 | first_stage_model | VQModelInterface  | 55.3 M
-3 | cond_stage_model  | HPAHybridEmbedder | 55.3 M
---------------------------------------------------------
-294 M     Trainable params
+350 M     Trainable params
 55.3 M    Non-trainable params
-350 M     Total params
-1,401.166 Total estimated model params size (MB)
+405 M     Total params
+1,622.457 Total estimated model params size (MB)
 ```
 
 
-```
-...
-Epoch time: 64.01 seconds
-Average Peak memory 0.00MiB
-Epoch 999, global step 999: val/loss_simple_ema was not in top 3
-Epoch 999:   6%| | 1/16 [01:20<10:05, 40.38s/it, loss=0.0588, v_num=0, train/loss_simple_step=
-Saving latest checkpoint...
-```
-
-
-
-Diffusion model ith spatial transformer:
-
-```
-  | Name              | Type             | Params
--------------------------------------------------------
-0 | model             | DiffusionWrapper | 380 M 
-1 | model_ema         | LitEma           | 0     
-2 | first_stage_model | VQModelInterface | 55.3 M
-3 | cond_stage_model  | HPAClassEmbedder | 55.3 M
--------------------------------------------------------
-```
 ### Train a diffusion model with reference channels and densenet embeddings as conditions
 This command train a diffusion model on one GPU:
 ```
-python main.py -t -b configs/latent-diffusion/hpa23__ldm__vq4__imputation__cells512_0.5.yaml --gpus=0,
+python main.py -t -b configs/latent-diffusion/hpa23__ldm__vq4__imputation__ref_densenet__cells512_0.5.yaml --gpus=0,
 ```
 
 Specify the GPU IDs differently if you want to use GPUs other than just GPU 0. Add `-d` if you want to run in debug mode.

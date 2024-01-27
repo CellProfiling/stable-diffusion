@@ -24,7 +24,7 @@ class JUMP_HPA:
     def __init__(self, group='train', path_to_metadata=None, hpa_ref_channels=None, jump_ref_channels=None, output_channels=None, size=512, flip_and_rotate=True, include_smiles=False, inlcude_prots=False, return_info=False):
    
         #Define metadata (image path, datasource, indices)
-        self.metadata = pd.read_csv(path_to_metadata) #insert path to metadata
+        self.metadata = pd.read_csv(path_to_metadata).sample(frac=1.0, random_state=42, ignore_index=True) #shuffle metadata
         self.indices = self.metadata[self.metadata["split"]==group].index
         image_ids = set(self.metadata.loc[self.indices, "image_id"])
         self.datasources = self.metadata["datasource"]
@@ -56,7 +56,7 @@ class JUMP_HPA:
 
         #get image
         img_index = self.indices[i]
-        info = self.metadata.iloc[img_index]
+        info = self.metadata.iloc[img_index].to_dict()
         datasource = info["datasource"]
         
         #load ref img
@@ -67,7 +67,7 @@ class JUMP_HPA:
         ref_imarray = image_processing.load_image(datasource, info["image_id"], ref_chans)
         
         #Augment image
-        out_imarray = None
+        out_imarray = []
         if datasource == "jump":
             tile = int(info["subtile"])
             crop = self.crop_transforms[tile] #only crop jump

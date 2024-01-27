@@ -1,21 +1,22 @@
 from __future__ import annotations
 from collections import defaultdict
 import os
-import numpy as np
 import time
-import torch
-import torchvision
-import pytorch_lightning as pl
-from tabulate import tabulate
+
+import numpy as np
 from omegaconf import OmegaConf
 from PIL import Image
 import psutil
+import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.utilities.distributed import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
+from tabulate import tabulate
+import torch
+import torchvision
 import wandb
 
-from ldm.evaluation.metrics import ImageEvaluator
+from ldm.evaluation import metrics
 from ldm.util import send_message_to_slack, send_image_to_slack
 
 
@@ -94,9 +95,9 @@ class ImageLogger(Callback):
         self.log_to_slack = log_to_slack
         self._last_val_loss = None
         self.monitor_val_metric = monitor_val_metric
-        self.metrics = {"train/mse": [], "train/ssim": [], "val/mse": [], "val/ssim": []}
+        self.metrics = {"train": defaultdict(list), "val": defaultdict(list)}
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        self.image_evaluator = ImageEvaluator(device=device)
+        self.image_evaluator = metrics.ImageEvaluator(device=device)
 
     def _testtube(self, pl_module, images, samples, targets, refs, gt_locations, batch_idx, masks, bbox_labels, split):
         for k in images:
@@ -121,8 +122,13 @@ class ImageLogger(Callback):
         mse, ssim, mse_bbox, ssim_bbox, feats_mse, samples_loc_probs, sc_gt_locations = self.image_evaluator.calc_metrics(samples, targets, refs, gt_locations, bbox_coords, masks, bbox_labels)
         # pl_module.log(f"{split}/mse", mse) # Don't set `on_step` or `on_epoch` since this is already inside `on_train_batch_end()` or `on_validation_batch_end`
         # pl_module.log(f"{split}/ssim", ssim)
-        self.metrics[f"{split}/mse"].append(mse)
-        self.metrics[f"{split}/ssim"].append(ssim)
+        self.metrics[split]["mse"].append(mse)
+        self.metrics[split]["ssim"].append(ssim)
+        self.metrics[split]["mse_bbox"].append(mse_bbox)
+        self.metrics[split]["ssim_bbox"].append(ssim_bbox)
+        self.metrics[split]["feats_mse"].append(feats_mse)
+        self.metrics[split]["samples_loc_probs"].append(samples_loc_probs)
+        self.metrics[split]["sc_gt_locations"].append(sc_gt_locations)
 
     # @rank_zero_only
     def log_local(self, save_dir, split, images,
@@ -209,6 +215,18 @@ class ImageLogger(Callback):
                 self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
 
     @rank_zero_only
+    def on_train_epoch_end(self, trainer, pl_module):
+        print(f"Process {os.getpid()} in on_train_epoch_end(), global step {pl_module.global_step}")
+        for metric_name, metric_values in self.metrics["train"].items():
+            self.metrics["train"][metric_name] = np.concatenate(metric_values, axis=0)
+        if len(self.metrics["train"]) > 0:
+            loc_acc, loc_macrof1, loc_microf1, feats_mse_mean = metrics.calc_localization_metrics(self.metrics["train"]["samples_loc_probs"], self.metrics["train"]["sc_gt_locations"], self.metrics["train"]["feats_mse"])
+        else:
+            loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
+        wandb.log({"train/mse": np.mean(self.metrics["train"]["mse"]), "train/ssim": np.mean(self.metrics["train"]["ssim"]), "train/mse_bbox": np.mean(self.metrics["train"]["mse_bbox"]), "train/ssim_bbox": np.mean(self.metrics["train"]["ssim_bbox"]), "train/feats_mse": feats_mse_mean, "train/loc_acc": loc_acc, "train/loc_macrof1": loc_macrof1, "train/loc_microf1": loc_microf1}, step=pl_module.global_step)
+        self.metrics["train"] = defaultdict(list)
+
+    @rank_zero_only
     def on_validation_epoch_end(self, trainer, pl_module):
         print(f"Process {os.getpid()} in on_validation_epoch_end(), global step {pl_module.global_step}")
         if self.log_to_slack and self.monitor_val_metric and self.monitor_val_metric in trainer.logged_metrics:
@@ -219,14 +237,15 @@ class ImageLogger(Callback):
                     send_message_to_slack(f"🎉 Validation metric updated: {self.monitor_val_metric} reached {val}")
             else:
                 self._last_val_loss = val
-        wandb.log({f"val/mse": np.mean(self.metrics["val/mse"]), f"val/ssim": np.mean(self.metrics["val/ssim"])}, step=pl_module.global_step)
-        self.metrics["val/mse"], self.metrics["val/ssim"] = [], []
+        for metric_name, metric_values in self.metrics["val"].items():
+            self.metrics["val"][metric_name] = np.concatenate(metric_values, axis=0)
+        if len(self.metrics["val"]) > 0:
+            loc_acc, loc_macrof1, loc_microf1, feats_mse_mean = metrics.calc_localization_metrics(self.metrics["val"]["samples_loc_probs"], self.metrics["val"]["sc_gt_locations"], self.metrics["val"]["feats_mse"])
+        else:
+            loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
+        wandb.log({"val/mse": np.mean(self.metrics["val"]["mse"]), "val/ssim": np.mean(self.metrics["val"]["/ssim"]), "val/mse_bbox": np.mean(self.metrics["val"]["mse_bbox"]), "val/ssim_bbox": np.mean(self.metrics["val"]["ssim_bbox"]), "val/feats_mse": feats_mse_mean, "val/loc_acc": loc_acc, "val/loc_macrof1": loc_macrof1, "val/loc_microf1": loc_microf1}, step=pl_module.global_step)
+        self.metrics["val"] = defaultdict(list)
 
-    @rank_zero_only
-    def on_train_epoch_end(self, trainer, pl_module):
-        print(f"Process {os.getpid()} in on_train_epoch_end(), global step {pl_module.global_step}")
-        wandb.log({f"train/mse": np.mean(self.metrics["train/mse"]), f"train/ssim": np.mean(self.metrics["train/ssim"])}, step=pl_module.global_step)
-        self.metrics["train/mse"], self.metrics["train/ssim"] = [], []
 
 class CUDACallback(Callback):
     # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
