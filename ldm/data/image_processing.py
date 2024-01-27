@@ -203,13 +203,13 @@ def load_intensity_rescaled_image(image_id):
     return full_res_image
     
 def load_image(datasource, image_id, channels):
-    if datasource == “jump”:
-        data_dir = “/scratch/groups/emmalu/JUMP/processed”
-    elif datasource == “hpa”:
-        data_dir = “/scratch/groups/emmalu/HPA_rescaled”
+    if datasource == "jump":
+        data_dir = "/scratch/groups/emmalu/JUMP/processed"
+    elif datasource == "hpa":
+        data_dir = "/scratch/groups/emmalu/HPA_rescaled"
     else:
         raise NotImplementedError
-    if datasource == “jump”:
+    if datasource == "jump":
         imarrays = []
         for i in range(3):
             if i >= len(channels):
@@ -218,14 +218,14 @@ def load_image(datasource, image_id, channels):
                 #Note that channel “0" must come last
                 imarrays.append([np.zeros(imarrays[0][0].shape, dtype=np.uint8)])
             else:
-                image_path = image_id + f”p01-ch{channels[i]}sk1fk1fl1.png”
-                imarrays.append([np.array(Image.open(f’{data_dir}/{image_path}‘))])
+                image_path = image_id + f'p01-ch{channels[i]}sk1fk1fl1.png'
+                imarrays.append([np.array(Image.open(f'{data_dir}/{image_path}'))])
         #combine channels into single multichannel image
         image = np.concatenate(imarrays, axis=0)
         image = np.transpose(image, (1, 2, 0)) #need num channels to be last dimension
-    elif datasource == “hpa”:
-        image_path = image_id + “.tif”
-        imarray = np.array(Image.open(f’{data_dir}/{image_path}’))
+    elif datasource == "hpa":
+        image_path = image_id + ".tif"
+        imarray = np.array(Image.open(f'{data_dir}/{image_path}'))
         image = imarray[:, :, channels]
         for i in range(3-image.shape[2]):
             z = np.array([np.zeros(image.shape[:2])]).transpose((1,2,0)).astype(np.uint8)
