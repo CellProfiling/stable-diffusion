@@ -56,7 +56,7 @@ class JUMP_HPA:
 
         #get image
         img_index = self.indices[i]
-        info = self.metadata.iloc[img_index]
+        info = self.metadata.iloc[img_index].to_dict()
         datasource = info["datasource"]
         
         #load ref img
@@ -67,7 +67,7 @@ class JUMP_HPA:
         ref_imarray = image_processing.load_image(datasource, info["image_id"], ref_chans)
         
         #Augment image
-        out_imarray = None
+        out_imarray = []
         if datasource == "jump":
             tile = int(info["subtile"])
             crop = self.crop_transforms[tile] #only crop jump
