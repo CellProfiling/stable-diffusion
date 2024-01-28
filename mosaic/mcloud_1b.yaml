@@ -1,0 +1,31 @@
+# 1B LLM training config
+
+name: mpt-1b-quickstart-llm-foundry
+image: mosaicml/llm-foundry:2.1.0_cu121_flash2-ddba5c8
+compute:
+  gpus: 8
+  cluster: r9z1
+integrations:
+  - integration_type: git_repo
+    git_repo: mosaicml/llm-foundry
+    git_commit: v0.4.0
+    pip_install: .[gpu-flash2]
+command: >-
+  cd llm-foundry/scripts
+
+  # Convert C4 dataset to StreamingDataset format
+    python data_prep/convert_dataset_hf.py \
+    --dataset c4 --data_subset en \
+    --out_root my-copy-c4 --splits train_small val_small \
+    --concat_tokens 2048 --tokenizer EleutherAI/gpt-neox-20b --eos_text '<|endoftext|>'
+
+      
+  # Train an MPT-1b model for 100 batches
+    composer train/train.py \
+    train/yamls/pretrain/mpt-1b.yaml \
+    data_local=my-copy-c4 \
+    train_loader.dataset.split=train_small \
+    eval_loader.dataset.split=val_small \
+    max_duration=100ba \
+    eval_interval=0 \
+    save_folder=mpt-1b

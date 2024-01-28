@@ -1,0 +1,15 @@
+# 1B LLM training config
+
+name: train-ldm
+image: xikun/pytorch_lightning_vision
+integrations:
+  - integration_type: "git_repo"
+    git_repo: oeway/stable-diffusion
+    git_branch: xikun-dev
+    pip_install: .
+compute:
+  gpus: 8
+  cluster: r14z3p1
+command: >-
+  # Train LDM
+    composer main.py -t -b configs/latent-diffusion/hpa23__ldm__vq4__imputation__ref_densenet_prott5__cells512_0.5-debug.yaml --gpus=8 --streaming true

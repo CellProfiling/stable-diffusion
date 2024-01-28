@@ -8,11 +8,14 @@ import h5py
 import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
+import streaming
+from streaming import StreamingDataset
+from torch.utils.data import DataLoader
 
 from ldm.data import image_processing
 from ldm.data.serialize import TorchSerializedList
 
-HPA_DATA_ROOT = os.environ.get("HPA_DATA_ROOT", "/scratch/users/xikunz2/stable-diffusion/HPA")
+HPA_DATA_ROOT = os.environ.get("HPA_DATA_ROOT", "/scratch/users/xikunz2/stable-diffusion/data/HPA")
 
 location_mapping = {"Actin filaments": 0, "Aggresome": 1, "Cell Junctions": 2, "Centriolar satellite": 3, "Centrosome": 4, "Cytokinetic bridge": 5, "Cytoplasmic bodies": 6, "Cytosol": 7, "Endoplasmic reticulum": 8, "Endosomes": 9, "Focal adhesion sites": 10, "Golgi apparatus": 11, "Intermediate filaments": 12, "Lipid droplets": 13, "Lysosomes": 14, "Microtubule ends": 15, "Microtubules": 16, "Midbody": 17, "Midbody ring": 18, "Mitochondria": 19, "Mitotic chromosome": 20, "Mitotic spindle": 21, "Nuclear bodies": 22, "Nuclear membrane": 23, "Nuclear speckles": 24, "Nucleoli": 25, "Nucleoli fibrillar center": 26, "Nucleoplasm": 27, "Peroxisomes": 28, "Plasma membrane": 29, "Rods & Rings": 30, "Vesicles": 31, "nan": 32}
 
@@ -174,3 +177,26 @@ class HPA:
                 densent_features_avg = avg_emd
             sample["densent_avg"] = densent_features_avg
         return sample
+
+
+def get_hpa_streaming_dataloaders(debug, num_workers):
+    # Remote directory (S3 or local filesystem) where dataset is stored
+    remote_dir = 's3://ai-residency-stanford-subcellgenai/super_multiplex_cell/data/hpa23_rescaled_mds'
+
+    # Local directory where dataset is cached during operation
+    local_dir = '/scratch/users/xikunz2/stable-diffusion/data/hpa23_rescaled_mds'
+
+    # Create PyTorch DataLoader
+    if debug:
+        train_split = valid_split = test_split = 'train_subset'
+    else:
+        train_split, valid_split, test_split = 'train', 'validation', 'test'
+    persistent_workers = num_workers > 0
+    streaming.base.util.clean_stale_shared_memory()
+    train_dataset = StreamingDataset(local=f"{local_dir}/train", remote=f"{remote_dir}/{train_split}", split=None, shuffle=True)
+    train_dataloader = DataLoader(train_dataset, persistent_workers=persistent_workers, pin_memory=True)
+    valid_dataset = StreamingDataset(local=f"{local_dir}/validation", remote=f"{remote_dir}/{valid_split}", split=None, shuffle=True)
+    valid_dataloader = DataLoader(valid_dataset, persistent_workers=persistent_workers, pin_memory=True)
+    test_dataset = StreamingDataset(local=f"{local_dir}/test", remote=f"{remote_dir}/{test_split}", split=None, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, persistent_workers=persistent_workers, pin_memory=True)
+    return train_dataloader, valid_dataloader, test_dataloader

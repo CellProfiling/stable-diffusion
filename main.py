@@ -7,9 +7,9 @@ from packaging import version
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
-from streaming import StreamingDataset
-from torch.utils.data import DataLoader
+import torch.distributed as dist
 
+from ldm.data import hpa23
 from ldm.parse import get_parser, separate_args
 from ldm.util import instantiate_from_config, send_message_to_slack
 
@@ -37,14 +37,15 @@ def main(opt, logdir, nowname):
     config_to_log = dict()
     for k in nondefault_trainer_args + non_trainer_args:
         config_to_log[k] = getattr(opt, k)
-    if not "gpus" in trainer_config:
+    if not "gpus" in trainer_config or trainer_config["gpus"] == 0:
         del trainer_config["accelerator"]
-        cpu = True
+        n_devices = 1
+    elif type(trainer_config["gpus"]) == int:
+        n_devices = trainer_config["gpus"]
+        print(f"Running on {n_devices} GPUs.")
     else:
-        assert "," in trainer_config["gpus"], "Please specify GPUs as comma-separated list."
-        gpuinfo = trainer_config["gpus"]
-        print(f"Running on GPUs {gpuinfo}")
-        cpu = False
+        n_devices = len(trainer_config["gpus"].strip(",").split(","))
+        print(f"Running on {n_devices} GPUs ({trainer_config['gpus']}).")
     trainer_opt = argparse.Namespace(**trainer_config)
     if hasattr(trainer_opt, "profiler"):
         if trainer_opt.profiler == "simple":
@@ -66,8 +67,8 @@ def main(opt, logdir, nowname):
             "params": {
                 "name": nowname,
                 "save_dir": logdir,
-                "offline": opt.debug,
-                # "offline": False,
+                # "offline": opt.debug,
+                "offline": False,
                 "id": nowname,
                 "project": "super-multiplex-cell",
                 "config": config_to_log,
@@ -188,26 +189,10 @@ def main(opt, logdir, nowname):
     trainer.logdir = logdir  ###
 
     # data
+    data = instantiate_from_config(config.data)
     if opt.streaming:
-        # Remote directory (S3 or local filesystem) where dataset is stored
-        remote_dir = 's3://ai-residency-stanford-subcellgenai/super_multiplex_cell/data/hpa23_rescaled_mds'
-
-        # Local directory where dataset is cached during operation
-        local_dir = '/scratch/users/xikunz2/stable-diffusion/data/hpa23_rescaled_mds'
-
-        # Create PyTorch DataLoader
-        if opt.debug:
-            train_split = valid_split = test_split = 'train_subset'
-        else:
-            train_split, valid_split, test_split = 'train', 'validation', 'test'
-        train_dataset = StreamingDataset(local=f"{local_dir}/train", remote=f"{remote_dir}/{train_split}", split=None, shuffle=True)
-        train_dataloader = DataLoader(train_dataset)
-        valid_dataset = StreamingDataset(local=f"{local_dir}/validation", remote=f"{remote_dir}/{valid_split}", split=None, shuffle=False)
-        valid_dataloader = DataLoader(valid_dataset)
-        test_dataset = StreamingDataset(local=f"{local_dir}/test", remote=f"{remote_dir}/{test_split}", split=None, shuffle=False)
-        test_dataloader = DataLoader(test_dataset)
+        train_dataloader, valid_dataloader, test_dataloader = hpa23.get_hpa_streaming_dataloaders(opt.debug, data.num_workers)
     else:
-        data = instantiate_from_config(config.data)
         # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
         # calling these ourselves should not be necessary but it is.
         # lightning still takes care of proper multiprocessing though
@@ -219,10 +204,10 @@ def main(opt, logdir, nowname):
 
     # configure learning rate
     bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
-    if not cpu:
-        ngpu = len(str(lightning_config.trainer.gpus).strip(",").split(','))
-    else:
-        ngpu = 1
+    # if not cpu:
+    #     ngpu = len(str(lightning_config.trainer.gpus).strip(",").split(','))
+    # else:
+    #     ngpu = 1
     if 'accumulate_grad_batches' in lightning_config.trainer:
         accumulate_grad_batches = lightning_config.trainer.accumulate_grad_batches
     else:
@@ -230,10 +215,10 @@ def main(opt, logdir, nowname):
     print(f"accumulate_grad_batches = {accumulate_grad_batches}")
     lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
     if opt.scale_lr:
-        model.learning_rate = accumulate_grad_batches * ngpu * bs * base_lr
+        model.learning_rate = accumulate_grad_batches * n_devices * bs * base_lr
         print(
             "Setting learning rate to {:.2e} = {} (accumulate_grad_batches) * {} (num_gpus) * {} (batchsize) * {:.2e} (base_lr)".format(
-                model.learning_rate, accumulate_grad_batches, ngpu, bs, base_lr))
+                model.learning_rate, accumulate_grad_batches, n_devices, bs, base_lr))
     else:
         model.learning_rate = base_lr
         print("++++ NOT USING LR SCALING ++++")
@@ -273,7 +258,7 @@ def main(opt, logdir, nowname):
                 send_message_to_slack("Oops, the diffusion model training process has stopped unexpectedly")
             raise
     if not opt.no_test and not trainer.interrupted:
-        if opt.mosaic:
+        if opt.streaming:
             trainer.test(model, test_dataloader)
         else:
             trainer.test(model, data)

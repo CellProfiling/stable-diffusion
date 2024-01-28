@@ -1,0 +1,10 @@
+# Quick Start
+
+name: hello-world
+image: bash
+command: |-
+  sleep 2 
+  echo Hello World!
+compute:
+  cluster: r9z1
+  gpus: 0
