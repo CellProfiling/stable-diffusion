@@ -112,7 +112,7 @@ class HPACombineDatasetMetadata():
         image = Image.fromarray(image, mode="RGB")
         image = np.array(image).astype(np.uint8)
         image = self.preprocessor(image=image)["image"]
-        image = (image/127.5 - 1.0).astype(np.float32)
+        image = (image/127.5 - 1.0).astype(np.float32) #convert to (-1, 1)
         return image
 
     def __len__(self):

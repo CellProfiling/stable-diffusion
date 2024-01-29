@@ -44,45 +44,54 @@ class ImageEvaluator:
         # fid = self.fid.compute().item()
 
         # Calculate MSE and SSIM inside the bounding box
-        bbox_y, bbox_x, bbox_height, bbox_width = bbox_coords[:, 0], bbox_coords[:, 1], bbox_coords[:, 2], bbox_coords[:, 3]
-        resized_cropped_samples, resized_cropped_targets, resized_cropped_refs = [], [], []
-        padding = int(resolution / 512 * 20)
-        masks = masks.unsqueeze(1).expand(-1, 3, -1, -1)
-        for i in range(bs):
-            min_row, min_col = max(bbox_y[i] - padding, 0), max(bbox_x[i] - padding, 0)
-            max_row, max_col = min(bbox_y[i] + bbox_height[i] + padding, resolution), min(bbox_x[i] + bbox_width[i] + padding, resolution)
+        if bbox_coords and masks and bbox_labels:
+            bbox_y, bbox_x, bbox_height, bbox_width = bbox_coords[:, 0], bbox_coords[:, 1], bbox_coords[:, 2], bbox_coords[:, 3]
+            resized_cropped_samples, resized_cropped_targets, resized_cropped_refs = [], [], []
+            padding = int(resolution / 512 * 20)
+            masks = masks.unsqueeze(1).expand(-1, 3, -1, -1)
+            for i in range(bs):
+                min_row, min_col = max(bbox_y[i] - padding, 0), max(bbox_x[i] - padding, 0)
+                max_row, max_col = min(bbox_y[i] + bbox_height[i] + padding, resolution), min(bbox_x[i] + bbox_width[i] + padding, resolution)
 
-            samples[i][masks[i] != bbox_labels[i]] = 0
-            cropped_image = samples[i, :, min_row:max_row, min_col:max_col]
-            resized_cropped_image = torchvision.transforms.functional.resize(cropped_image, size=(128, 128), interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
-            resized_cropped_samples.append(resized_cropped_image)
+                samples[i][masks[i] != bbox_labels[i]] = 0
+                cropped_image = samples[i, :, min_row:max_row, min_col:max_col]
+                resized_cropped_image = torchvision.transforms.functional.resize(cropped_image, size=(128, 128), interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
+                resized_cropped_samples.append(resized_cropped_image)
 
-            targets[i][masks[i] != bbox_labels[i]] = 0
-            cropped_image = targets[i, :, min_row:max_row, min_col:max_col]
-            resized_cropped_image = torchvision.transforms.functional.resize(cropped_image, size=(128, 128), interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
-            resized_cropped_targets.append(resized_cropped_image)
+                targets[i][masks[i] != bbox_labels[i]] = 0
+                cropped_image = targets[i, :, min_row:max_row, min_col:max_col]
+                resized_cropped_image = torchvision.transforms.functional.resize(cropped_image, size=(128, 128), interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
+                resized_cropped_targets.append(resized_cropped_image)
 
-            refs[i][masks[i] != bbox_labels[i]] = 0
-            cropped_image = refs[i, :, min_row:max_row, min_col:max_col]
-            resized_cropped_image = torchvision.transforms.functional.resize(cropped_image, size=(128, 128), interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
-            resized_cropped_refs.append(resized_cropped_image)
-        resized_cropped_samples = torch.stack(resized_cropped_samples, dim=0)
-        resized_cropped_targets = torch.stack(resized_cropped_targets, dim=0)
-        resized_cropped_refs = torch.stack(resized_cropped_refs, dim=0)
-        mse_bbox = F.mse_loss(resized_cropped_samples, resized_cropped_targets, reduction='none').mean(dim=[1,2,3]).to('cpu').detach().numpy()
-        ssim_bbox = torchmetrics.functional.image.ssim.ssim(resized_cropped_samples, resized_cropped_targets, reduction='none').mean(dim=[1,2,3]).to('cpu').detach().numpy()
+                refs[i][masks[i] != bbox_labels[i]] = 0
+                cropped_image = refs[i, :, min_row:max_row, min_col:max_col]
+                resized_cropped_image = torchvision.transforms.functional.resize(cropped_image, size=(128, 128), interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
+                resized_cropped_refs.append(resized_cropped_image)
+            resized_cropped_samples = torch.stack(resized_cropped_samples, dim=0)
+            resized_cropped_targets = torch.stack(resized_cropped_targets, dim=0)
+            resized_cropped_refs = torch.stack(resized_cropped_refs, dim=0)
+            mse_bbox = F.mse_loss(resized_cropped_samples, resized_cropped_targets, reduction='none').mean(dim=[1,2,3]).to('cpu').detach().numpy()
+            ssim_bbox = torchmetrics.functional.image.ssim.ssim(resized_cropped_samples, resized_cropped_targets, reduction='none').mean(dim=[1,2,3]).to('cpu').detach().numpy()
+        else:
+            mse_bbox = mse
+            ssim_bbox = ssim
 
         # Evaluate using a single-cell location classifier 
-        resized_cropped_samples = resized_cropped_samples.mean(dim=1, keepdim=True)
-        samples_4_channels = torch.cat([resized_cropped_refs, resized_cropped_samples], dim=1)[:, [0, 3, 2, 1]]
-        samples_loc_probs, samples_feats = self.clf_images(samples_4_channels)
-        targets_4_channels = torch.cat([resized_cropped_refs, resized_cropped_targets], dim=1)[:, [0, 3, 2, 1]]
-        targets_loc_probs, targets_feats = self.clf_images(targets_4_channels)
+        if gt_locations:
+            resized_cropped_samples = resized_cropped_samples.mean(dim=1, keepdim=True)
+            samples_4_channels = torch.cat([resized_cropped_refs, resized_cropped_samples], dim=1)[:, [0, 3, 2, 1]]
+            samples_loc_probs, samples_feats = self.clf_images(samples_4_channels)
+            targets_4_channels = torch.cat([resized_cropped_refs, resized_cropped_targets], dim=1)[:, [0, 3, 2, 1]]
+            targets_loc_probs, targets_feats = self.clf_images(targets_4_channels)
 
-        feats_mse = F.mse_loss(samples_feats, targets_feats, reduction='none').mean(dim=1).to('cpu').detach().numpy()
-        sc_gt_locations = (targets_loc_probs > 0.5) * gt_locations.to('cpu').detach().numpy()
-        for idx, loc in matched_idx_to_location.items():
-            print(f"{loc} {targets_loc_probs[0, idx]},", end=" ")
+            feats_mse = F.mse_loss(samples_feats, targets_feats, reduction='none').mean(dim=1).to('cpu').detach().numpy()
+            sc_gt_locations = (targets_loc_probs > 0.5) * gt_locations.to('cpu').detach().numpy()
+            for idx, loc in matched_idx_to_location.items():
+                print(f"{loc} {targets_loc_probs[0, idx]},", end=" ")
+        else:
+            feats_mse = []
+            samples_loc_probs = []
+            sc_gt_locations = []
         return mse, ssim, mse_bbox, ssim_bbox, feats_mse, samples_loc_probs, sc_gt_locations
 
 

@@ -86,8 +86,11 @@ class JUMP_HPA:
         assert ref_imarray.shape == (512, 512, 3)      
 
         
-        
-        sample.update({"image": out_imarray, "ref-image": ref_imarray, "info": info})
+        if out_imarray: #output array not empty --> training ldm:
+            sample.update({"image": out_imarray, "ref-image": ref_imarray, "info": info})
+        else: #output imarray is empty --> training autoencoder
+            sample.update({"image": ref_imarray, "ref-image": ref_imarray, "info": info})
+
 
         if self.return_info:
             sample["info"] = info

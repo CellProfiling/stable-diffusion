@@ -179,10 +179,11 @@ class ImageLogger(Callback):
                            pl_module.global_step, pl_module.current_epoch, batch_idx)
 
             logger_log_images = self.logger_log_images.get(logger, lambda *args, **kwargs: None)
-            gt_locations, bbox_coords, masks, bbox_labels = batch["matched_location_classes"], batch["bbox_coords"], batch["mask"], batch["bbox_label"]
+            #gt_locations, bbox_coords, masks, bbox_labels = batch["matched_location_classes"], batch["bbox_coords"], batch["mask"], batch["bbox_label"]
             refs = torch.permute(batch["ref-image"], (0, 3, 1, 2))
-            logger_log_images(pl_module, images, samples, targets, refs, gt_locations, bbox_coords, masks, bbox_labels, batch_idx, split)
-
+            logger_log_images(pl_module, images, samples, targets, refs, [], [], [], [], batch_idx, split)
+            #logger_log_images(pl_module, images, samples, targets, refs, gt_locations, bbox_coords, masks, bbox_labels, batch_idx, split)
+            
             if is_train:
                 pl_module.train()
 
