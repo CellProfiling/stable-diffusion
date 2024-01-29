@@ -1,7 +1,7 @@
 import argparse, os, sys, datetime, glob, socket, subprocess
 from contextlib import redirect_stderr, redirect_stdout
 
-from memory_profiler import profile
+# from memory_profiler import profile
 from omegaconf import OmegaConf
 from packaging import version
 import pytorch_lightning as pl

@@ -11,5 +11,6 @@ compute:
   gpus: 8
   cluster: r14z3p1
 command: >-
+  cd stable-diffusion
   # Train LDM
-    composer main.py -t -b configs/latent-diffusion/hpa23__ldm__vq4__imputation__ref_densenet_prott5__cells512_0.5-debug.yaml --gpus=8 --streaming true
+  composer main.py -t -b configs/latent-diffusion/hpa23__ldm__vq4__imputation__ref_densenet_prott5__cells512_0.5-debug.yaml --gpus=8 --streaming true
