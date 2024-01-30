@@ -7,7 +7,6 @@ from packaging import version
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
-import torch.distributed as dist
 
 from ldm.data import hpa23
 from ldm.parse import get_parser, separate_args
