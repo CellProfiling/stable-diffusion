@@ -220,10 +220,15 @@ class ImageLogger(Callback):
         print(f"Process {os.getpid()} in on_train_epoch_end(), global step {pl_module.global_step}")
         for metric_name, metric_values in self.metrics["train"].items():
             self.metrics["train"][metric_name] = np.concatenate(metric_values, axis=0)
-        if len(self.metrics["train"]) > 0:
-            loc_acc, loc_macrof1, loc_microf1, feats_mse_mean = metrics.calc_localization_metrics(self.metrics["train"]["samples_loc_probs"], self.metrics["train"]["sc_gt_locations"], self.metrics["train"]["feats_mse"])
-        else:
-            loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
+        
+        ##########change by zoe#############
+        #if len(self.metrics["train"]) > 0:
+            #loc_acc, loc_macrof1, loc_microf1, feats_mse_mean = metrics.calc_localization_metrics(self.metrics["train"]["samples_loc_probs"], self.metrics["train"]["sc_gt_locations"], self.metrics["train"]["feats_mse"])
+        #else:
+            #loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
+        ####################################
+        loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
+
         wandb.log({"train/mse": np.mean(self.metrics["train"]["mse"]), "train/ssim": np.mean(self.metrics["train"]["ssim"]), "train/mse_bbox": np.mean(self.metrics["train"]["mse_bbox"]), "train/ssim_bbox": np.mean(self.metrics["train"]["ssim_bbox"]), "train/feats_mse": feats_mse_mean, "train/loc_acc": loc_acc, "train/loc_macrof1": loc_macrof1, "train/loc_microf1": loc_microf1}, step=pl_module.global_step)
         self.metrics["train"] = defaultdict(list)
 
@@ -240,10 +245,15 @@ class ImageLogger(Callback):
                 self._last_val_loss = val
         for metric_name, metric_values in self.metrics["val"].items():
             self.metrics["val"][metric_name] = np.concatenate(metric_values, axis=0)
-        if len(self.metrics["val"]) > 0:
-            loc_acc, loc_macrof1, loc_microf1, feats_mse_mean = metrics.calc_localization_metrics(self.metrics["val"]["samples_loc_probs"], self.metrics["val"]["sc_gt_locations"], self.metrics["val"]["feats_mse"])
-        else:
-            loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
+        
+        #####changed by zoe####
+        #if len(self.metrics["val"]) > 0:
+            #loc_acc, loc_macrof1, loc_microf1, feats_mse_mean = metrics.calc_localization_metrics(self.metrics["val"]["samples_loc_probs"], self.metrics["val"]["sc_gt_locations"], self.metrics["val"]["feats_mse"])
+        #else:
+            #loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
+        loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
+        ########################
+
         wandb.log({"val/mse": np.mean(self.metrics["val"]["mse"]), "val/ssim": np.mean(self.metrics["val"]["/ssim"]), "val/mse_bbox": np.mean(self.metrics["val"]["mse_bbox"]), "val/ssim_bbox": np.mean(self.metrics["val"]["ssim_bbox"]), "val/feats_mse": feats_mse_mean, "val/loc_acc": loc_acc, "val/loc_macrof1": loc_macrof1, "val/loc_microf1": loc_microf1}, step=pl_module.global_step)
         self.metrics["val"] = defaultdict(list)
 
