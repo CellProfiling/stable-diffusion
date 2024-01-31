@@ -186,7 +186,7 @@ def main(opt, logdir, nowname):
     trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
     trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
     trainer.logdir = logdir  ###
-
+    print('Streaming bool:', opt.streaming)
     # data
     if opt.streaming:
         # Remote directory (S3 or local filesystem) where dataset is stored
@@ -393,6 +393,8 @@ if __name__ == "__main__":
         logdir = os.path.join(opt.logdir, "debug_logs" if opt.debug else "logs", nowname)
         os.makedirs(logdir)
     # wandb.init(project="super-multiplex-cell", config=opt, resume="allow", settings=wandb.Settings(start_method="fork"), name=nowname, mode="offline" if opt.debug else "online", id=nowname)
+    print(logdir)
+    print(opt)
     if opt.debug:
         main(opt, logdir, nowname)
     else:

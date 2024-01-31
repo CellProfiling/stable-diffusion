@@ -202,9 +202,9 @@ def load_intensity_rescaled_image(image_id):
     assert is_between_0_255(full_res_image)
     return full_res_image
     
-def load_image(datasource, image_id, channels):
+def load_image(datasource, image_id, channels, tile):
     if datasource == "jump":
-        data_dir = "/scratch/groups/emmalu/JUMP/processed"
+        data_dir = "/scratch/groups/emmalu/JUMP/processed_tiled"
     elif datasource == "hpa":
         data_dir = "/scratch/groups/emmalu/HPA_rescaled"
     else:
@@ -218,7 +218,7 @@ def load_image(datasource, image_id, channels):
                 #Note that channel “0" must come last
                 imarrays.append([np.zeros(imarrays[0][0].shape, dtype=np.uint8)])
             else:
-                image_path = image_id + f'p01-ch{channels[i]}sk1fk1fl1.png'
+                image_path = image_id + f"p01-ch{channels[i]}sk1fk1fl1_{tile}.png"
                 imarrays.append([np.array(Image.open(f'{data_dir}/{image_path}'))])
         #combine channels into single multichannel image
         image = np.concatenate(imarrays, axis=0)

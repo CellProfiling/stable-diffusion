@@ -24,7 +24,7 @@ class JUMP_HPA:
     def __init__(self, group='train', path_to_metadata=None, hpa_ref_channels=None, jump_ref_channels=None, output_channels=None, size=512, flip_and_rotate=True, include_smiles=False, inlcude_prots=False, return_info=False):
    
         #Define metadata (image path, datasource, indices)
-        self.metadata = pd.read_csv(path_to_metadata).sample(frac=1.0, random_state=42, ignore_index=True) #shuffle metadata
+        self.metadata = pd.read_csv(path_to_metadata).sample(frac=1.0, random_state=42, ignore_index=True)[0:1000] #shuffle metadata
         self.indices = self.metadata[self.metadata["split"]==group].index
         image_ids = set(self.metadata.loc[self.indices, "image_id"])
         self.datasources = self.metadata["datasource"]
@@ -64,19 +64,20 @@ class JUMP_HPA:
             ref_chans = self.jump_channels
         elif datasource == "hpa":
             ref_chans = self.hpa_channels
-        ref_imarray = image_processing.load_image(datasource, info["image_id"], ref_chans)
+        
+        ref_imarray = image_processing.load_image(datasource, info["image_id"], ref_chans, info["subtile"])
         
         #Augment image
         out_imarray = []
         if datasource == "jump":
-            tile = int(info["subtile"])
-            crop = self.crop_transforms[tile] #only crop jump
-            ref_imarray = crop(image=ref_imarray)['image']
+            #tile = int(info["subtile"])
+            #crop = self.crop_transforms[tile] #only crop jump
+            #ref_imarray = crop(image=ref_imarray)['image']
 
             #load output img
             if self.output_channels is not None: # => jump img
                 out_imarray = image_processing.load_image(datasource, info["image_id"], self.output_channels)
-                out_imarray = crop(image=out_imarray)['image']
+                #out_imarray = crop(image=out_imarray)['image']
                 out_imarray = self.data_augmentation(image=out_imarray)['image']
                 out_imarray = image_processing.convert_to_minus1_1(out_imarray) #convert to (-1, 1)
                 assert out_imarray.shape == (512, 512, 3)  
@@ -86,8 +87,11 @@ class JUMP_HPA:
         assert ref_imarray.shape == (512, 512, 3)      
 
         
-        
-        sample.update({"image": out_imarray, "ref-image": ref_imarray, "info": info})
+        if out_imarray: #output array not empty --> training ldm:
+            sample.update({"image": out_imarray, "ref-image": ref_imarray, "info": info})
+        else: #output imarray is empty --> training autoencoder
+            sample.update({"image": ref_imarray, "ref-image": ref_imarray, "info": info})
+
 
         if self.return_info:
             sample["info"] = info
