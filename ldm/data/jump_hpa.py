@@ -37,8 +37,8 @@ class JUMP_HPA:
 
         #Define crop, resize, flip/rotate transformations
         self.crop_transforms = [albumentations.Crop(x_min=40+250*i, y_min=40+250*j, x_max=40+250*(i+1), y_max=40+250*(j+1)) for i in range(4) for j in range(4)]
-        size = size*scale_factor
-        self.transforms = [albumentations.geometric.resize.Resize(height=size, width=size, interpolation=cv2.INTER_LINEAR)]
+        self.final_size = int(size*scale_factor)
+        self.transforms = [albumentations.geometric.resize.Resize(height=self.final_size, width=self.final_size, interpolation=cv2.INTER_LINEAR)]
         self.flip_and_rotate = flip_and_rotate
         if self.flip_and_rotate: #will rotate by random angle and then horizontal flip with prob 0.5
             self.transforms.extend([albumentations.RandomRotate90(p=1.0),
@@ -81,11 +81,11 @@ class JUMP_HPA:
                 #out_imarray = crop(image=out_imarray)['image']
                 out_imarray = self.data_augmentation(image=out_imarray)['image']
                 out_imarray = image_processing.convert_to_minus1_1(out_imarray) #convert to (-1, 1)
-                assert out_imarray.shape == (512, 512, 3)  
+                assert out_imarray.shape == (self.final_size, self.final_size, 3)  
        
         ref_imarray = self.data_augmentation(image=ref_imarray)['image']
         ref_imarray = image_processing.convert_to_minus1_1(ref_imarray)
-        assert ref_imarray.shape == (512, 512, 3)      
+        assert ref_imarray.shape == (self.final_size, self.final_size, 3)      
 
         
         if out_imarray: #output array not empty --> training ldm:
