@@ -273,7 +273,7 @@ def main(opt, logdir, nowname):
                 send_message_to_slack("Oops, the diffusion model training process has stopped unexpectedly")
             raise
     if not opt.no_test and not trainer.interrupted:
-        if opt.mosaic:
+        if opt.streaming:
             trainer.test(model, test_dataloader)
         else:
             trainer.test(model, data)
