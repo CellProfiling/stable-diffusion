@@ -21,7 +21,7 @@ from ldm.data.serialize import TorchSerializedList
 
 class JUMP_HPA:
    
-    def __init__(self, group='train', path_to_metadata=None, hpa_ref_channels=None, jump_ref_channels=None, output_channels=None, size=512, flip_and_rotate=True, include_smiles=False, inlcude_prots=False, return_info=False):
+    def __init__(self, group='train', path_to_metadata=None, hpa_ref_channels=None, jump_ref_channels=None, output_channels=None, size=512, scale_factor=1, flip_and_rotate=True, include_smiles=False, inlcude_prots=False, return_info=False):
    
         #Define metadata (image path, datasource, indices)
         self.metadata = pd.read_csv(path_to_metadata).sample(frac=1.0, random_state=42, ignore_index=True)[0:1000] #shuffle metadata
@@ -37,6 +37,7 @@ class JUMP_HPA:
 
         #Define crop, resize, flip/rotate transformations
         self.crop_transforms = [albumentations.Crop(x_min=40+250*i, y_min=40+250*j, x_max=40+250*(i+1), y_max=40+250*(j+1)) for i in range(4) for j in range(4)]
+        size = size*scale_factor
         self.transforms = [albumentations.geometric.resize.Resize(height=size, width=size, interpolation=cv2.INTER_LINEAR)]
         self.flip_and_rotate = flip_and_rotate
         if self.flip_and_rotate: #will rotate by random angle and then horizontal flip with prob 0.5
