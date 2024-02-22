@@ -151,7 +151,7 @@ class JUMPHPAClassEmbedder(nn.Module):
         assert len(condition_row) == 1
         with torch.no_grad():
             condition_rec_row = [self.image_embedding_model.decode(cond) for cond in condition_row]
-        n_imgs_per_row = len(condition_rec_row)
+        n_imgs_per_row = len(condition_rec_row) #will be 1
         condition_rec_row = torch.stack(condition_rec_row)  # n_log_step, n_row, C, H, W
         condition_grid = rearrange(condition_rec_row, 'n b c h w -> b n c h w')
         condition_grid = rearrange(condition_grid, 'b n c h w -> (b n) c h w')
