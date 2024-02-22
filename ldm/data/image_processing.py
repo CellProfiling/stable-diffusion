@@ -198,7 +198,11 @@ def load_raw_image(plate_id, image_id):
 
 def load_intensity_rescaled_image(image_id):
     data_dir = "/scratch/groups/emmalu/HPA_rescaled"
-    full_res_image = np.array(Image.open(f'{data_dir}/{image_id}.tif'))
+    try:
+        full_res_image = np.array(Image.open(f'{data_dir}/{image_id}.tif'))
+    except ValueError:
+        print(f"Buffer is not large enough to load image {image_id}")
+        full_res_image = load_raw_image(image_id)
     assert is_between_0_255(full_res_image)
     return full_res_image
     
