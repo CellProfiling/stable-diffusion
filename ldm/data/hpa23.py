@@ -229,12 +229,12 @@ class Fucci:
         assert targetarray.shape == (image_height, image_width, 3)
         assert image_processing.is_between_0_255(imarray)
 
-        transformed = self.preprocessor(image=imarray, target=targetarray)
-        print(transformed["image"].shape, transformed["target"].shape)
-        #assert transformed["image"].shape == (self.final_size, self.final_size, 3)
-        #assert transformed["target"].shape == (self.final_size, self.final_size, 3)
+        transformed = self.preprocessor(image=imarray, mask=targetarray)
+        print(transformed["image"].shape, transformed["mask"].shape)
+        assert transformed["image"].shape == (self.final_size, self.final_size, 3)
+        assert transformed["mask"].shape == (self.final_size, self.final_size, 3)
         imarray = transformed["image"]
-        targetarray = transformed["target"]
+        targetarray = transformed["mask"]
         
         imarray = image_processing.convert_to_minus1_1(imarray)
         targetarray = image_processing.convert_to_minus1_1(targetarray)
