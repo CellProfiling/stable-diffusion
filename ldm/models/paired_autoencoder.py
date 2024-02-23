@@ -24,6 +24,7 @@ class VQModel(pl.LightningModule):
                  ckpt_path=None,
                  ignore_keys=[],
                  image_key="image",
+                 target_key="ref-image",
                  colorize_nlabels=None,
                  monitor=None,
                  batch_resize_range=None,
@@ -37,6 +38,7 @@ class VQModel(pl.LightningModule):
         self.embed_dim = embed_dim
         self.n_embed = n_embed
         self.image_key = image_key
+        self.target_key = target_key
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
         self.loss = instantiate_from_config(lossconfig)
@@ -165,7 +167,7 @@ class VQModel(pl.LightningModule):
         # https://github.com/pytorch/pytorch/issues/37142
         # try not to fool the heuristics
         x = self.get_input(batch, self.image_key)
-        y = self.get_target(batch, self.image_key)
+        y = self.get_target(batch, self.target_key)
         ypred, qloss, ind = self(x, return_pred_indices=True)
 
         if optimizer_idx == 0:
@@ -192,7 +194,7 @@ class VQModel(pl.LightningModule):
 
     def _validation_step(self, batch, batch_idx, suffix=""):
         x = self.get_input(batch, self.image_key)
-        y = self.get_target(batch, self.image_key)
+        y = self.get_target(batch, self.target_key)
         ypred, qloss, ind = self(x, return_pred_indices=True)
         aeloss, log_dict_ae = self.loss(qloss, y, ypred, 0,
                                         self.global_step,
@@ -269,6 +271,8 @@ class VQModel(pl.LightningModule):
             ypred = self.to_rgb(ypred)
         log["inputs"] = x
         log["reconstructions"] = ypred
+        y = self.get_target(batch, self.target_key)
+        log["target"] = y
         if plot_ema:
             with self.ema_scope():
                 xrec_ema, _ = self(x)
