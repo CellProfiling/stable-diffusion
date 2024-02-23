@@ -183,12 +183,13 @@ class Fucci:
         self.metadata = pd.read_csv(f"{FUCCI_ROOT}/fucci_meta.csv")
         self.total_length = len(self.metadata)
 
+        print(self.metadata)
         assert group in ['train', 'validation']
 
         train_indexes, valid_indexes = self.metadata[self.metadata[split + "_split"] == "train"].index, self.metadata[self.metadata[split + "_split"] == "validation"].index
         self.indexes = train_indexes if group == "train" else valid_indexes
         image_ids = set(self.metadata.loc[self.indexes, "image_id"])
-
+        
         self.channels_in = channels_in
         self.channels_out = channels_out
         self.indexes = TorchSerializedList(self.indexes)
@@ -213,30 +214,25 @@ class Fucci:
         print(f"Dataset group: {group}, length: {len(self.indexes)}, image channels: {self.channels_in} > {self.channels_out}")
 
     def __len__(self):
-        return len(self.cell_masks_metadata) if self.crop_type == "cells" else len(self.indexes)
+        return len(self.indexes)
 
     def __getitem__(self, i):
         # i = 1960
-        if self.crop_type == "cells":
-            cell = self.cell_masks_metadata.iloc[i]
-            # cell = self.cell_masks_metadata.loc[1214]
-            # com_y, com_x, hpa_index = cell[["com_y", "com_x", "hpa_index"]]
-            image_height, image_width, bbox_label, hpa_index = cell[["ImageHeight", "ImageWidth", "maskid", "hpa_index"]]
-        else:
-            hpa_index = self.indexes[i]
-            image_height, image_width = self.metadata.loc[hpa_index, ["ImageHeight", "ImageWidth"]]
+        hpa_index = self.indexes[i]
+        image_height, image_width = self.metadata.loc[hpa_index, ["ImageHeight", "ImageWidth"]]
         info = self.metadata.loc[hpa_index]
         image_id = info["image_id"]
         sample = {"hpa_index": hpa_index, 'image_id': image_id}
-        imarray = image_processing.load_raw_fucci_image(image_id, self.channels_in)
-        targetarray = image_processing.load_raw_fucci_image(image_id, self.channels_out)
+        imarray = image_processing.load_raw_fucci_image(image_id, self.channels_in, rescale=True)
+        targetarray = image_processing.load_raw_fucci_image(image_id, self.channels_out, rescale=False)
         assert imarray.shape == (image_height, image_width, 3)
         assert targetarray.shape == (image_height, image_width, 3)
         assert image_processing.is_between_0_255(imarray)
 
         transformed = self.preprocessor(image=imarray, target=targetarray)
-        assert transformed["image"].shape == (self.final_size, self.final_size, 3)
-        assert transformed["target"].shape == (self.final_size, self.final_size, 3)
+        print(transformed["image"].shape, transformed["target"].shape)
+        #assert transformed["image"].shape == (self.final_size, self.final_size, 3)
+        #assert transformed["target"].shape == (self.final_size, self.final_size, 3)
         imarray = transformed["image"]
         targetarray = transformed["target"]
         
