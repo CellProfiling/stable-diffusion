@@ -42,19 +42,19 @@ data:
       target: ldm.data.hpa23.Fucci
       params:
         group: 'train'
-        channels_in: [0, None, 1]
-        channels_out: [2, 3, None]
+        channels_in: [1,None,0]
+        channels_out: [2,3,None]
         rotate_and_flip: false
         crop_size: 512
         # crop_type: cells # Train with FOV
         scale_factor: 0.5
         return_info: false
     validation:
-      target: ldm.data.hpa23.HPA
+      target: ldm.data.hpa23.Fucci
       params:
         group: 'validation'
-        channels_in: [0, None, 1]
-        channels_out: [2, 3, None]
+        channels_in: [1,None,0]
+        channels_out: [2,3,None]
         crop_size: 512
         # crop_type: cells # Train with FOV
         scale_factor: 0.5
@@ -65,9 +65,9 @@ lightning:
     image_logger:
       target: ldm.callbacks.ImageLogger
       params:
-        batch_frequency: 1000
+        batch_frequency: 100
         log_validation: true
-        val_batch_frequency: 1000
+        val_batch_frequency: 100
         max_images: 8
         increase_log_steps: false
         log_first_step: true
