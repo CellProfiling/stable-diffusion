@@ -238,3 +238,26 @@ def load_image(datasource, image_id, channels, tile):
     assert image.shape[2] == 3
     assert is_between_0_255(image)
     return image
+
+def load_raw_fucci_image(image_id, chs):
+    data_dir = "/scratch/groups/emmalu/cellcycle/datasets/Fucci-dataset-v3_filtered_all"
+    ch_map = {0: 'nuclei.png', 1: 'microtubule.png', 2: 'CDT1.png', 3: 'Geminin.png'}
+    imgs = []
+    for ch in chs:
+        if ch is None:
+            imgarray = np.np.zeros((2048,2048), dtype=np.uint8)
+        else:
+            img = Image.open(f'{data_dir}/{image_id}/{ch_map[ch]}')
+            imgarray = np.array(img)
+        imgs.append(imgarray)
+
+    full_res_image = np.stack(img, axis=-1)
+    p0, p99 = np.percentile(full_res_image, (0, 99))
+    full_res_image = exposure.rescale_intensity(full_res_image, in_range=(p0, p99), out_range=(0, 255)).astype(np.uint8)
+    assert is_between_0_255(full_res_image)
+    return full_res_image
+
+def load_intensity_rescaled_image_from_folder(image_id, chs):
+    full_res_image = load_raw_fucci_image(image_id, chs)
+    assert is_between_0_255(full_res_image)
+    return full_res_image
