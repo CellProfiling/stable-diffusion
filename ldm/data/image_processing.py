@@ -256,6 +256,8 @@ def load_raw_fucci_image(image_id, chs, rescale=True):
     if rescale:
         p0, p99 = np.percentile(full_res_image, (0, 99.9))
         full_res_image = exposure.rescale_intensity(full_res_image, in_range=(p0, p99), out_range=(0, 255)).astype(np.uint8)
+    else:
+        full_res_image = (full_res_image/256).astype(np.uint8)
     assert is_between_0_255(full_res_image)
     return full_res_image
 
