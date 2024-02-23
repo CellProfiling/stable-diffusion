@@ -179,8 +179,8 @@ class HPA:
 FUCCI_ROOT = "/scratch/groups/emmalu/cellcycle/datasets"
 class Fucci:
 
-    def __init__(self, group='train', split="imputation", in_channels=None, out_channels=None, return_info=False, rotate_and_flip=False, crop_size=512, crop_type="cells", scale_factor=0.5):
-        self.metadata = pd.read_csv(f"{FUCCI_ROOT}/Fucci_meta.csv")
+    def __init__(self, group='train', split="imputation", channels_in=None, channels_out=None, return_info=False, rotate_and_flip=False, crop_size=512, crop_type="cells", scale_factor=0.5):
+        self.metadata = pd.read_csv(f"{FUCCI_ROOT}/fucci_meta.csv")
         self.total_length = len(self.metadata)
 
         assert group in ['train', 'validation']
@@ -189,8 +189,8 @@ class Fucci:
         self.indexes = train_indexes if group == "train" else valid_indexes
         image_ids = set(self.metadata.loc[self.indexes, "image_id"])
 
-        self.in_channels = in_channels
-        self.out_channels = out_channels
+        self.channels_in = channels_in
+        self.channels_out = channels_out
         self.indexes = TorchSerializedList(self.indexes)
         self.return_info = return_info
         self.crop_type = crop_type
@@ -210,7 +210,7 @@ class Fucci:
             #     albumentations.HorizontalFlip(p=0.5)])
             raise NotImplementedError("Rotation and flipping not implemented since cell bounding box positions are not rotated and flipped")
         self.preprocessor = albumentations.Compose(transforms)
-        print(f"Dataset group: {group}, length: {len(self.indexes)}, image channels: {self.channels}")
+        print(f"Dataset group: {group}, length: {len(self.indexes)}, image channels: {self.channels_in} > {self.channels_out}")
 
     def __len__(self):
         return len(self.cell_masks_metadata) if self.crop_type == "cells" else len(self.indexes)
@@ -228,8 +228,8 @@ class Fucci:
         info = self.metadata.loc[hpa_index]
         image_id = info["image_id"]
         sample = {"hpa_index": hpa_index, 'image_id': image_id}
-        imarray = image_processing.load_raw_fucci_image(image_id, self.in_channels)
-        targetarray = image_processing.load_raw_fucci_image(image_id, self.out_channels)
+        imarray = image_processing.load_raw_fucci_image(image_id, self.channels_in)
+        targetarray = image_processing.load_raw_fucci_image(image_id, self.channels_out)
         assert imarray.shape == (image_height, image_width, 3)
         assert targetarray.shape == (image_height, image_width, 3)
         assert image_processing.is_between_0_255(imarray)
