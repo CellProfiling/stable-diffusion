@@ -69,7 +69,7 @@ def main(opt, logdir, nowname):
                 "offline": opt.debug,
                 # "offline": False,
                 "id": nowname,
-                "project": "super-multiplex-cell",
+                "project": "cellcycle",
                 "config": config_to_log,
                 "resume": "allow",
             }
