@@ -174,3 +174,78 @@ class HPA:
                 densent_features_avg = avg_emd
             sample["densent_avg"] = densent_features_avg
         return sample
+
+
+FUCCI_ROOT = "/scratch/groups/emmalu/cellcycle/datasets"
+class Fucci:
+
+    def __init__(self, group='train', split="imputation", in_channels=None, out_channels=None, return_info=False, rotate_and_flip=False, crop_size=512, crop_type="cells", scale_factor=0.5):
+        self.metadata = pd.read_csv(f"{FUCCI_ROOT}/Fucci_meta.csv")
+        self.total_length = len(self.metadata)
+
+        assert group in ['train', 'validation']
+
+        train_indexes, valid_indexes = self.metadata[self.metadata[split + "_split"] == "train"].index, self.metadata[self.metadata[split + "_split"] == "validation"].index
+        self.indexes = train_indexes if group == "train" else valid_indexes
+        image_ids = set(self.metadata.loc[self.indexes, "image_id"])
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.indexes = TorchSerializedList(self.indexes)
+        self.return_info = return_info
+        self.crop_type = crop_type
+        self.crop_size = crop_size
+        if crop_type == "random":
+            transforms = [albumentations.RandomCrop(height=crop_size, width=crop_size)]
+        elif crop_type == "center":
+            transforms = [albumentations.CenterCrop(height=crop_size, width=crop_size)]
+        elif crop_type == "cells" or crop_type == "None":
+            transforms = []
+        else:
+            raise ValueError(f"Unknown crop type: {crop_type}")
+        self.final_size = int(crop_size * scale_factor)
+        transforms.append(albumentations.SmallestMaxSize(max_size=self.final_size, interpolation=cv2.INTER_LINEAR))
+        if rotate_and_flip:
+            # transforms.extend([albumentations.Rotate(limit=180, border_mode=cv2.BORDER_REFLECT_101, p=1.0, interpolation=cv2.INTER_NEAREST),
+            #     albumentations.HorizontalFlip(p=0.5)])
+            raise NotImplementedError("Rotation and flipping not implemented since cell bounding box positions are not rotated and flipped")
+        self.preprocessor = albumentations.Compose(transforms)
+        print(f"Dataset group: {group}, length: {len(self.indexes)}, image channels: {self.channels}")
+
+    def __len__(self):
+        return len(self.cell_masks_metadata) if self.crop_type == "cells" else len(self.indexes)
+
+    def __getitem__(self, i):
+        # i = 1960
+        if self.crop_type == "cells":
+            cell = self.cell_masks_metadata.iloc[i]
+            # cell = self.cell_masks_metadata.loc[1214]
+            # com_y, com_x, hpa_index = cell[["com_y", "com_x", "hpa_index"]]
+            image_height, image_width, bbox_label, hpa_index = cell[["ImageHeight", "ImageWidth", "maskid", "hpa_index"]]
+        else:
+            hpa_index = self.indexes[i]
+            image_height, image_width = self.metadata.loc[hpa_index, ["ImageHeight", "ImageWidth"]]
+        info = self.metadata.loc[hpa_index]
+        image_id = info["image_id"]
+        sample = {"hpa_index": hpa_index, 'image_id': image_id}
+        imarray = image_processing.load_raw_fucci_image(image_id, self.in_channels)
+        targetarray = image_processing.load_raw_fucci_image(image_id, self.out_channels)
+        assert imarray.shape == (image_height, image_width, 3)
+        assert targetarray.shape == (image_height, image_width, 3)
+        assert image_processing.is_between_0_255(imarray)
+
+        transformed = self.preprocessor(image=imarray, target=targetarray)
+        assert transformed["image"].shape == (self.final_size, self.final_size, 3)
+        assert transformed["target"].shape == (self.final_size, self.final_size, 3)
+        imarray = transformed["image"]
+        targetarray = transformed["target"]
+        
+        imarray = image_processing.convert_to_minus1_1(imarray)
+        targetarray = image_processing.convert_to_minus1_1(targetarray)
+        top, left, bottom, right = (0, 2048, 2048, 0) #image_processing.get_bbox_from_mask(maskarray, bbox_label)
+        bbox_coords = np.array([top, left, bottom - top, right - left])
+        sample.update({"image": imarray, "ref-image": targetarray}) # "mask": maskarray, "bbox_coords": bbox_coords})
+        if self.return_info:
+            sample["info"] = info
+
+        return sample
