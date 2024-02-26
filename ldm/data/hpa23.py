@@ -180,14 +180,19 @@ FUCCI_ROOT = "/scratch/groups/emmalu/cellcycle/datasets"
 class Fucci:
 
     def __init__(self, group='train', split="imputation", channels_in=None, channels_out=None, return_info=False, rotate_and_flip=False, crop_size=512, crop_type="cells", scale_factor=0.5):
-        self.metadata = pd.read_csv(f"{FUCCI_ROOT}/fucci_meta.csv")
+
+        assert group in ['train', 'validation', 'test']
+        self.group = group
+        if self.group == 'test':
+            self.metadata = pd.read_csv(f"{HPA_DATA_ROOT}/v23/IF-image-w-splits.csv", index_col=0)
+            self.metadata = self.metadata[self.metadata.latest_version==23]
+            self.indexes = self.metadata.index
+        else:
+            self.metadata = pd.read_csv(f"{FUCCI_ROOT}/fucci_meta.csv")
+            train_indexes, valid_indexes = self.metadata[self.metadata[split + "_split"] == "train"].index[:5], self.metadata[self.metadata[split + "_split"] == "validation"].index[:5]
+            self.indexes = train_indexes if group == "train" else valid_indexes
+            
         self.total_length = len(self.metadata)
-
-        print(self.metadata)
-        assert group in ['train', 'validation']
-
-        train_indexes, valid_indexes = self.metadata[self.metadata[split + "_split"] == "train"].index, self.metadata[self.metadata[split + "_split"] == "validation"].index
-        self.indexes = train_indexes if group == "train" else valid_indexes
         image_ids = set(self.metadata.loc[self.indexes, "image_id"])
         
         self.channels_in = channels_in
@@ -223,8 +228,12 @@ class Fucci:
         info = self.metadata.loc[hpa_index]
         image_id = info["image_id"]
         sample = {"hpa_index": hpa_index, 'image_id': image_id}
-        imarray = image_processing.load_raw_fucci_image(image_id, self.channels_in, rescale=True)
-        targetarray = image_processing.load_raw_fucci_image(image_id, self.channels_out, rescale=False)
+        if self.group == 'test':
+            imarray = image_processing.load_raw_hpa_image(image_id, self.channels_in, rescale=True)
+            targetarray = image_processing.load_raw_hpa_image(image_id, self.channels_out, rescale=False)
+        else:
+            imarray = image_processing.load_raw_fucci_image(image_id, self.channels_in, rescale=True)
+            targetarray = image_processing.load_raw_fucci_image(image_id, self.channels_out, rescale=False)
         assert imarray.shape == (image_height, image_width, 3)
         assert targetarray.shape == (image_height, image_width, 3)
         assert image_processing.is_between_0_255(imarray)
