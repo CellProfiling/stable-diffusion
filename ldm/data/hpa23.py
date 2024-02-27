@@ -239,15 +239,13 @@ class Fucci:
         assert image_processing.is_between_0_255(imarray)
 
         transformed = self.preprocessor(image=imarray, mask=targetarray)
-        print(transformed["image"].shape, transformed["mask"].shape)
         assert transformed["image"].shape == (self.final_size, self.final_size, 3)
         assert transformed["mask"].shape == (self.final_size, self.final_size, 3)
         imarray = transformed["image"]
         targetarray = transformed["mask"]
-        
         imarray = image_processing.convert_to_minus1_1(imarray)
         targetarray = image_processing.convert_to_minus1_1(targetarray)
-        top, left, bottom, right = (0, 2048, 2048, 0) #image_processing.get_bbox_from_mask(maskarray, bbox_label)
+        top, left, bottom, right = (0, self.final_size, self.final_size, 0) #image_processing.get_bbox_from_mask(maskarray, bbox_label)
         bbox_coords = np.array([top, left, bottom - top, right - left])
         sample.update({"image": imarray, "ref-image": targetarray}) # "mask": maskarray, "bbox_coords": bbox_coords})
         if self.return_info:
