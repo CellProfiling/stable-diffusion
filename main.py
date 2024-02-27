@@ -52,7 +52,7 @@ def main(opt, logdir, nowname):
         elif trainer_opt.profiler == "advanced":
             trainer_opt.profiler = pl.profiler.AdvancedProfiler(dirpath=logdir, filename="perf_logs")
     lightning_config.trainer = trainer_config
-
+    print(config)
     # model
     model = instantiate_from_config(config.model)
 
@@ -182,7 +182,7 @@ def main(opt, logdir, nowname):
         callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
     elif 'ignore_keys_callback' in callbacks_cfg:
         del callbacks_cfg['ignore_keys_callback']
-
+    print(trainer_opt, trainer_kwargs)
     trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
     trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
     trainer.logdir = logdir  ###
@@ -272,11 +272,13 @@ def main(opt, logdir, nowname):
             if "log_to_slack" in lightning_config.callbacks.image_logger.params and lightning_config.callbacks.image_logger.params.log_to_slack:
                 send_message_to_slack("Oops, the diffusion model training process has stopped unexpectedly")
             raise
+    print('Testing data : ', len(data.datasets['test']))
     if not opt.no_test and not trainer.interrupted:
         if opt.streaming:
             trainer.test(model, test_dataloader)
         else:
-            trainer.test(model, data)
+            print('-----------testing on HPA-----------')
+            trainer.test(model, data.datasets['test'])
     # except Exception:
     #     if opt.debug and trainer.global_rank == 0:
     #         try:
