@@ -220,6 +220,12 @@ class VQModel(pl.LightningModule):
         self.log_dict(log_dict_disc)
         return self.log_dict
 
+    def test_step(self, batch, batch_idx, suffix=""):
+        x = self.get_input(batch, self.image_key)
+        y = self.get_target(batch, self.target_key) # protein channel
+        ypred, qloss, ind = self(x, return_pred_indices=True)
+        self.log(f"test", ypred, prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        
     def configure_optimizers(self):
         lr_d = self.learning_rate
         lr_g = self.lr_g_factor*self.learning_rate
