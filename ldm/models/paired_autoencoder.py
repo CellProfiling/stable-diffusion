@@ -131,7 +131,11 @@ class VQModel(pl.LightningModule):
         x = batch[k]
         if len(x.shape) == 3:
             x = x[..., None]
-        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        try:
+            x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        except: # test mode
+            x = torch.from_numpy(x).cuda()
+            x = x.permute(3, 2, 0, 1).to(memory_format=torch.contiguous_format).float()
         if self.batch_resize_range is not None:
             lower_size = self.batch_resize_range[0]
             upper_size = self.batch_resize_range[1]
@@ -149,7 +153,11 @@ class VQModel(pl.LightningModule):
         x = batch[k]
         if len(x.shape) == 3:
             x = x[..., None]
-        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        try:
+            x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        except: # test mode
+            x = torch.from_numpy(x).cuda()
+            x = x.permute(3, 2, 0, 1).to(memory_format=torch.contiguous_format).float()
         if self.batch_resize_range is not None:
             lower_size = self.batch_resize_range[0]
             upper_size = self.batch_resize_range[1]
@@ -224,7 +232,8 @@ class VQModel(pl.LightningModule):
         x = self.get_input(batch, self.image_key)
         y = self.get_target(batch, self.target_key) # protein channel
         ypred, qloss, ind = self(x, return_pred_indices=True)
-        self.log(f"test", ypred, prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log(f"test{suffix} prediction: {pred.shape}", ypred,
+                   prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         
     def configure_optimizers(self):
         lr_d = self.learning_rate
