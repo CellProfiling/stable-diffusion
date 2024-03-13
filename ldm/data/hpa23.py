@@ -189,7 +189,7 @@ class Fucci:
             self.indexes = self.metadata.index
         else:
             self.metadata = pd.read_csv(f"{FUCCI_ROOT}/fucci_meta.csv")
-            train_indexes, valid_indexes = self.metadata[self.metadata[split + "_split"] == "train"].index[:5], self.metadata[self.metadata[split + "_split"] == "validation"].index[:5]
+            train_indexes, valid_indexes = self.metadata[self.metadata[split + "_split"] == "train"].index, self.metadata[self.metadata[split + "_split"] == "validation"].index
             self.indexes = train_indexes if group == "train" else valid_indexes
             
         self.total_length = len(self.metadata)
