@@ -168,7 +168,8 @@ def crop_around_object(img, mask, bbox_label, size):
     return cropped_img, cropped_mask
 
 
-def load_raw_image(plate_id, image_id):
+def load_raw_image(image_id):
+    plate_id = image_id.split("_")[0]
     data_dir = "/scratch/groups/emmalu/HPA_temp"
     blue = Image.open(f'{data_dir}/{plate_id}/{image_id}_blue.png')
     bluearray = np.array(blue)
@@ -193,6 +194,7 @@ def load_raw_image(plate_id, image_id):
     p0, p99 = np.percentile(full_res_image, (0, 99))
     full_res_image = exposure.rescale_intensity(full_res_image, in_range=(p0, p99), out_range=(0, 255)).astype(np.uint8)
     assert is_between_0_255(full_res_image)
+    print("loaded raw image")
     return full_res_image
 
 
@@ -214,18 +216,20 @@ def load_image(datasource, image_id, channels, tile):
         for i in range(3):
             if i >= len(channels):
                 #if only two reference channels than last channel will just be array of 0s
-                #Will call this channel “0" in .yaml fil
-                #Note that channel “0" must come last
                 imarrays.append([np.zeros(imarrays[0][0].shape, dtype=np.uint8)])
             else:
-                image_path = image_id + f"p01-ch{channels[i]}sk1fk1fl1_{tile}.png"
+                image_path = image_id + f"p01-ch{channels[i]}sk1fk1fl1_{int(tile)}.png"
                 imarrays.append([np.array(Image.open(f'{data_dir}/{image_path}'))])
         #combine channels into single multichannel image
         image = np.concatenate(imarrays, axis=0)
         image = np.transpose(image, (1, 2, 0)) #need num channels to be last dimension
     elif datasource == "hpa":
         image_path = image_id + ".tif"
-        imarray = np.array(Image.open(f'{data_dir}/{image_path}'))
+        try:
+            imarray = np.array(Image.open(f'{data_dir}/{image_path}'))
+        except ValueError:
+            print(f"Buffer is not large enough to load image {image_id}")
+            imarray = load_raw_image(image_id)
         image = imarray[:, :, channels]
         for i in range(3-image.shape[2]):
             z = np.array([np.zeros(image.shape[:2])]).transpose((1,2,0)).astype(np.uint8)
@@ -234,3 +238,24 @@ def load_image(datasource, image_id, channels, tile):
     assert image.shape[2] == 3
     assert is_between_0_255(image)
     return image
+
+
+def load_mask(datasource, image_id, tile):
+    if datasource == "jump":
+        data_dir = "/scratch/groups/emmalu/JUMP/processed_tiled"
+        mask_id = image_id.replace("images", "outlines")
+        path = f"{data_dir}/{mask_id}p01--cell_mask_{int(tile)}.npy"
+        cell_mask = np.load(path).astype(np.uint8)
+    elif datasource == "hpa":
+        data_dir = "/scratch/groups/emmalu/HPA_masks"
+        path = f"{data_dir}/{image_id}_cellmask.png"
+        cell_mask = np.array(Image.open(path)).astype(np.uint8)
+        cell_mask = np.array(cell_mask > 0).astype(np.uint8)
+
+    assert cell_mask.ndim == 2
+    assert list(np.unique(cell_mask)) == [0,1] #non empty binary img
+
+    return cell_mask
+
+
+

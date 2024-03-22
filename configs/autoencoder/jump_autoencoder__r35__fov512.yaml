@@ -40,7 +40,7 @@ data:
     train:
       target: ldm.data.jump_hpa.JUMP_HPA
       params:
-        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/jump_metadata.csv
+        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/nonempty_jump_metadata.csv
         group: 'train'
         jump_ref_channels: [3, 5] # NucleoliRNA, nucleus
         flip_and_rotate: True
@@ -50,8 +50,18 @@ data:
     validation:
       target: ldm.data.jump_hpa.JUMP_HPA
       params:
-        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/jump_metadata.csv
+        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/nonempty_jump_metadata.csv
         group: 'validation'
+        jump_ref_channels: [3, 5] # NucleoliRNA, nucleus
+        size: 512
+        scale_factor: 0.5
+        flip_and_rotate: False
+        return_info: False
+    test:
+      target: ldm.data.jump_hpa.JUMP_HPA
+      params:
+        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/nonempty_jump_metadata.csv
+        group: 'test'
         jump_ref_channels: [3, 5] # NucleoliRNA, nucleus
         size: 512
         scale_factor: 0.5
