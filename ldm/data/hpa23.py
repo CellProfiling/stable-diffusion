@@ -12,7 +12,7 @@ import pandas as pd
 from ldm.data import image_processing
 from ldm.data.serialize import TorchSerializedList
 
-HPA_DATA_ROOT = os.environ.get("HPA_DATA_ROOT", "/scratch/users/xikunz2/stable-diffusion/HPA")
+HPA_DATA_ROOT = os.environ.get("HPA_DATA_ROOT", "/scratch/users/xikunz2/cell-generator/data/HPA")
 
 location_mapping = {"Actin filaments": 0, "Aggresome": 1, "Cell Junctions": 2, "Centriolar satellite": 3, "Centrosome": 4, "Cytokinetic bridge": 5, "Cytoplasmic bodies": 6, "Cytosol": 7, "Endoplasmic reticulum": 8, "Endosomes": 9, "Focal adhesion sites": 10, "Golgi apparatus": 11, "Intermediate filaments": 12, "Lipid droplets": 13, "Lysosomes": 14, "Microtubule ends": 15, "Microtubules": 16, "Midbody": 17, "Midbody ring": 18, "Mitochondria": 19, "Mitotic chromosome": 20, "Mitotic spindle": 21, "Nuclear bodies": 22, "Nuclear membrane": 23, "Nuclear speckles": 24, "Nucleoli": 25, "Nucleoli fibrillar center": 26, "Nucleoplasm": 27, "Peroxisomes": 28, "Plasma membrane": 29, "Rods & Rings": 30, "Vesicles": 31, "nan": 32}
 
