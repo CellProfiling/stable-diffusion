@@ -23,7 +23,6 @@ from ldm.evaluation import metrics
 
 """
 Command example: CUDA_VISIBLE_DEVICES=0 python -m pdb scripts/img_gen/prot2img.py --config=configs/latent-diffusion/hpa23__ldm__vq4__imputation__cells512_0.5-debug.yaml --checkpoint=/scratch/users/xikunz2/stable-diffusion/logs/2023-10-15T10-18-18_hpa2__ldm__vq4__densenet_all__splitcpp__cell256/checkpoints/last.ckpt --scale=2 -d
-
 """
 
 

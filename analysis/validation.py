@@ -1,18 +1,22 @@
+from GPUtil import showUtilization as gpu_usage
+
+
 from omegaconf import OmegaConf
 import argparse, os
 from PIL import Image
 import numpy as np
 import pandas as pd
 import torch
-import gc
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.util import instantiate_from_config
+from ldm.evaluation import metrics2
+
 
 ############# HELPER FUNCTIONS #################
 def reconstruct_with_vqgan(x, model):
     z, _, [_, _, indices] = model.encode(x) 
     xrec = model.decode(z) 
-    return z, xrec
+    return xrec
 
 def sample_from_ldm(x, model):
     #TO DO
@@ -45,12 +49,14 @@ def main(opt):
   num_exs = opt.num_exs
   scale = opt.scale
   steps = opt.steps
+  mask = opt.mask
 
   #Constructing savedir names
   model_name = checkpoint.split("/checkpoints")[0].split("/")[-1]
   savedir = f"{savedir}/{model_name}"
   imgdir = f"{savedir}/images"
   
+  os.makedirs(imgdir, exist_ok=True) 
   
   #Get Dataloader
   data_config = config['data']
@@ -64,18 +70,34 @@ def main(opt):
   model = instantiate_from_config(config['model'])
   model.load_state_dict(torch.load(checkpoint, map_location="cpu")["state_dict"], strict=False)
   model = model.to(device)
+  image_evaluator = metrics2.ImageEvaluator(device=device)
+  if "ldm" in model_name:
+          sampler = DDIMSampler(model)
   model.eval()
 
 
-  batch_size = 4
+
+  batch_size = 16
   originals = []
+
+  mses = [] #mean squared errors
+  maes = [] #mean absolute errors
+  ssims =[] #structural similarity index measure
+  ious = [] #intersection over union
+  pccs = [] #pearson correlation coefficient
+  edists = [] #euclidean distances
+  cdists = [] #cosine distances
+  cell_areas = []
+
+
+  counter = 1 #save img counter
 
   with torch.no_grad():
     with model.ema_scope():
       for i in range(0, len(data.datasets["test"]), batch_size): #loop through number of batches
         print("Loop step: " + str(i))
         #get batch
-        lim = min([batch_size*(i+1), len(data.datasets["test"])])
+        lim = min([i+batch_size, len(data.datasets["test"])])
         batch = [data.datasets["test"][j] for j in range(i, lim)]
 
         #Reformat batch to dict
@@ -84,64 +106,67 @@ def main(opt):
           collated_batch[k] = [x[k] for x in batch]
           if isinstance(batch[0][k], (np.ndarray, np.generic)):
             collated_batch[k] = torch.tensor(collated_batch[k]).to(device)
+
         
-        #Get inputs
-        #originals = np.array([ex["image"] for ex in batch])
-        #originals = np.transpose(originals, (0, 3, 1, 2))
-        #originals = torch.from_numpy(originals).to(device)
-
         if "auto" in model_name:
-          #embeddings, recons = reconstruct_with_vqgan(originals, model)
-          recons = model(collated_batch)
-          m = torch.mean(recons).to('cpu')
-          #del embeddings
-          #del recons
-          #del originals
-          #gc.collect()
+          recons = reconstruct_with_vqgan(torch.permute(collated_batch['image'], (0, 3, 1, 2)), model)
 
-        if "ldm" in model_name:
-          sampler = DDIMSampler(model)
-
+        elif "ldm" in model_name:
           c = model.cond_stage_model(collated_batch)
           uc = dict()
+          if "c_concat" in c: #I only use c_concat bc I condition with imgs but NOT text
+              #c = conditioning, uc = unconditioning
+              #uc helps to guide sampler away from random noise and to be more specific towards reference img
+              uc['c_concat'] = [torch.zeros_like(v) for v in c['c_concat']] #set uc ref img to all 0s 
 
-          #I only use c_concat bc I condition with imgs but NOT text
-          if "c_concat" in c:
-              #c = conditioning
-              #uc = unconditioning
-              #uc helps to guide sampler away from random noise from generator
-              #pushes model to be more specific towards reference img
-              #From me uc is unconditioned on reference img --> set toall 0s 
-              uc['c_concat'] = [torch.zeros_like(v) for v in c['c_concat']]
-
+          #Sample and Decode
           shape = (c['c_concat'][0].shape[1],)+c['c_concat'][0].shape[2:] #shape of tensor to randomly sample
           samples_ddim, notsurewhatthisis = sampler.sample(S=steps, conditioning=c, batch_size=c['c_concat'][0].shape[0], shape=shape, unconditional_guidance_scale=scale, unconditional_conditioning=uc, verbose=False)
-          sampled_recons = model.decode_first_stage(samples_ddim)
+          recons = model.decode_first_stage(samples_ddim)
+        
+        if mask:
+          mse_per_chan, mae_per_chan, ssim_per_chan, iou_per_chan, edist_per_chan, pcc_per_chan, cdist_per_chan, cell_area = image_evaluator.calc_metrics(samples=recons, targets=torch.permute(collated_batch['image'], (0, 3, 1, 2)), masks=collated_batch['cell-mask'])
+        else:
+          mse_per_chan, mae_per_chan, ssim_per_chan, iou_per_chan, edist_per_chan, pcc_per_chan, cdist_per_chan, __ = image_evaluator.calc_metrics(samples=recons, targets=torch.permute(collated_batch['image'], (0, 3, 1, 2)))
+        mses.append(mse_per_chan)
+        maes.append(mae_per_chan)
+        ssims.append(ssim_per_chan)
+        ious.append(iou_per_chan)
+        pccs.append(pcc_per_chan)
+        edists.append(edist_per_chan)
+        cdists.append(cdist_per_chan)
+        if mask:
+          cell_areas.append(cell_area)
 
-          #references = [ex["ref-image"] for ex in batch]
-          #TO DO: set reference imgs properly
-          #embeddings, recons = sample_from_ldm(originals, model)
 
-        #if i < 6:
-          #save_imgs(originals, recons, imgdir)
-        #df = compute_differences(originals, recons, )
-      
+  mses = np.concatenate(mses, axis=0)
+  maes = np.concatenate(maes, axis=0)
+  ssims = np.concatenate(ssims, axis=0)
+  ious = np.concatenate(ious, axis=0)
+  pccs = np.concatenate(pccs, axis=0)
+  edists = np.concatenate(edists, axis=0)
+  cdists = np.concatenate(cdists, axis=0)    
+  data = np.concatenate([mses, maes, ssims, ious, pccs, edists, cdists], axis=1)
 
-    #originals = np.array([sample["image"] for sample in data.datasets["test"]])
-    #img_ids = [sample["image"] for sample in data.datasets["test"]["info"]["image_id"]]
-    #originals = np.transpose(originals, (0, 3, 1, 2))
-    #originals = torch.from_numpy(originals).to(device)
-    #embeddings, recons = reconstruct_with_vqgan(originals, model)
-
-    #saving
-    #np.save(f"{savedir}/originals.npy", originals)
-    #print(originals.shape)
-    #np.save(f"{savedir}/reconstructed.npy", recons)
-    #print(recons.shape)
-    #np.save(f"{savedir}/embeddings.npy", embeddings)
-    #print(embeddings.shape)
-    #save_imgs(originals, recons, imgdir)
+  mses_cols = ["MSE chan " + str(i) for i in range(mses.shape[1])]
+  mae_cols = ["MAE chan " + str(i) for i in range(mses.shape[1])]
+  ssim_cols = ["SSIM chan " + str(i) for i in range(ssims.shape[1])]
+  iou_cols = ["IOUs chan " + str(i) for i in range(ious.shape[1])]
+  pcc_cols = ["PCC chan " + str(i) for i in range(pccs.shape[1])]
+  edists_cols = ["Euclidean chan " + str(i) for i in range(edists.shape[1])]
+  cdists_cols = ["Cosine chan " + str(i) for i in range(cdists.shape[1])]
+  cols = mses_cols + mae_cols + ssim_cols + iou_cols + pcc_cols + edists_cols + cdists_cols
   
+  output = pd.DataFrame(data, columns=cols)
+
+  if mask:
+    cell_areas = np.concatenate(cell_areas, axis=0)  
+    output["Cell Area"] = cell_areas
+  
+  if mask:
+    output.to_csv(f"data/basic/{model_name}.csv", index=False)
+  else:
+     output.to_csv(f"data/basic/{model_name}_unmasked.csv", index=False)
 
   
 
@@ -158,6 +183,10 @@ if __name__ == "__main__":
     type=str,
     nargs="?",
     help="the model checkpoint",
+  )
+  parser.add_argument(
+    "--mask",
+    action="store_true"
   )
   parser.add_argument(
     "--savedir",

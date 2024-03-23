@@ -22,6 +22,10 @@ from einops import rearrange
 from ldm.util import instantiate_from_config
 import torch
 from torchvision.utils import make_grid
+import scipy.ndimage as ndi
+import cv2
+
+
 
 
 
@@ -45,6 +49,7 @@ class JUMP_HPA:
         self.crop_transforms = [albumentations.Crop(x_min=40+250*i, y_min=40+250*j, x_max=40+250*(i+1), y_max=40+250*(j+1)) for i in range(4) for j in range(4)]
         self.final_size = int(size*scale_factor)
         self.transforms = [albumentations.geometric.resize.Resize(height=self.final_size, width=self.final_size, interpolation=cv2.INTER_LINEAR)]
+        self.downsample = albumentations.geometric.resize.Resize(height=250, width=250, interpolation=cv2.INTER_LINEAR)
         self.flip_and_rotate = flip_and_rotate
         if self.flip_and_rotate: #will rotate by random angle and then horizontal flip with prob 0.5
             self.transforms.extend([albumentations.RandomRotate90(p=1.0),
@@ -88,16 +93,32 @@ class JUMP_HPA:
                 out_imarray = self.data_augmentation(image=out_imarray)['image']
                 out_imarray = image_processing.convert_to_minus1_1(out_imarray) #convert to (-1, 1)
                 assert out_imarray.shape == (self.final_size, self.final_size, 3)  
+        elif datasource == "hpa":
+            ref_imarray = self.downsample(image=ref_imarray)['image'] #downsample
        
         ref_imarray = self.data_augmentation(image=ref_imarray)['image']
         ref_imarray = image_processing.convert_to_minus1_1(ref_imarray)
         assert ref_imarray.shape == (self.final_size, self.final_size, 3)      
 
-        
+        #get cell mask
+        #Note: Don't resize cell-mask or else cells boundaries will merge
+        cell_mask = image_processing.load_mask(datasource, info["image_id"], info["subtile"])
+        if datasource == "jump":
+            assert cell_mask.shape == (250, 250)
+        #Note HPA mask will be same size as original HPA img (usually 2048, 2048)
+        cell_mask, num_labels  = ndi.label(cell_mask)
+        cell_mask = cv2.resize(cell_mask, dsize=(self.final_size, self.final_size), interpolation=cv2.INTER_NEAREST) #now all cell_masks are same size
+
+
         if self.output_channels is not None: #output array not empty --> training ldm:
-            sample.update({"image": out_imarray, "ref-image": ref_imarray, "info": info})
+            sample.update({"image": out_imarray, "ref-image": ref_imarray, "cell-mask": cell_mask, "info": info})
+            #sample.update({"image": out_imarray, "ref-image": ref_imarray, "info": info}) #need to train without mask
+            #sample.update({"image": out_imarray, "ref-image": ref_imarray}) #need to train without mask
         else: #output imarray is empty --> training autoencoder
-            sample.update({"image": ref_imarray, "ref-image": ref_imarray, "info": info})
+            sample.update({"image": ref_imarray, "ref-image": ref_imarray, "cell-mask": cell_mask, "info": info})
+            #sample.update({"image": ref_imarray, "ref-image": ref_imarray, "info": info}) #need to train without mask
+            #sample.update({"image": ref_imarray, "ref-image": ref_imarray}) #need to train without mask
+
 
 
         if self.return_info:

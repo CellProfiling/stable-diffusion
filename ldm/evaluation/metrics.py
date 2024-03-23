@@ -38,7 +38,9 @@ class ImageEvaluator:
 
         # Calculate MSE and SSIM
         mse = F.mse_loss(samples, targets, reduction='none').mean(dim=[1,2,3]).to('cpu').detach().numpy()
+        print(mse)
         ssim = torchmetrics.functional.image.ssim.ssim(samples, targets, reduction='none').mean(dim=[1,2,3]).to('cpu').detach().numpy()
+        print(ssim)
         # self.fid.update(targets, real=True)
         # self.fid.update(samples, real=False)
         # fid = self.fid.compute().item()

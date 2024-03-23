@@ -104,7 +104,7 @@ data:
     train:
       target: ldm.data.jump_hpa.JUMP_HPA
       params:
-        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/jump_metadata.csv
+        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/nonempty_jump_metadata.csv
         group: 'train'
         jump_ref_channels: [4, 5]
         output_channels: [1, 2, 3]
@@ -115,8 +115,19 @@ data:
     validation:
       target: ldm.data.jump_hpa.JUMP_HPA
       params:
-        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/jump_metadata.csv
+        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/nonempty_jump_metadata.csv
         group: 'validation'
+        jump_ref_channels: [4, 5]
+        output_channels: [1, 2, 3]
+        flip_and_rotate: False
+        size: 512
+        scale_factor: 0.5
+        return_info: False
+    test:
+      target: ldm.data.jump_hpa.JUMP_HPA
+      params:
+        path_to_metadata: /scratch/groups/emmalu/hpa_jump_metadata/nonempty_jump_metadata.csv
+        group: 'test'
         jump_ref_channels: [4, 5]
         output_channels: [1, 2, 3]
         flip_and_rotate: False
