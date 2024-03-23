@@ -254,12 +254,10 @@ def load_ometiff_image(image_id, chs, rescale=True):
         #print('Reading : ', f'{data_dir}/{image_id}_{ch}.ome.tiff')
         imgarray = tifffile.imread(f'{data_dir}/{image_id}_{ch}.ome.tiff')
         imgs.append(imgarray)
-    
-    for i in range(3-len(chs)):
+    for i in range(3-len(imgs)):  # ch=1 don't work for normal conv set up, assert ch=3
         imgs.append(imgarray)
-    #print([z.shape for z in imgs])
     full_res_image = np.stack(imgs, axis=2)
-    
+            
     if rescale:
         p2, p99 = np.percentile(full_res_image, (2, 99.8))
         full_res_image = exposure.rescale_intensity(full_res_image, in_range=(p2, p99), out_range=(0, 255)).astype(np.uint8)
