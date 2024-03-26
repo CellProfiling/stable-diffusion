@@ -40,7 +40,7 @@ data:
     train:
       target: ldm.data.bf.BFPaint
       params:
-        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta.csv
+        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta_HPA.csv
         group: 'train'
         input_channels: ['Tubulin']
         flip_and_rotate: True
@@ -50,7 +50,7 @@ data:
     validation:
       target: ldm.data.bf.BFPaint
       params:
-        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta.csv
+        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta_HPA.csv
         group: 'validation'
         input_channels: ['Tubulin']
         size: 512

@@ -40,7 +40,7 @@ data:
     train:
       target: ldm.data.bf.BFPaint
       params:
-        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta.csv
+        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta_HPA.csv
         group: 'train'
         input_channels: ['Actin']
         #output_channels: ['Nucleus']
@@ -51,7 +51,7 @@ data:
     validation:
       target: ldm.data.bf.BFPaint
       params:
-        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta.csv
+        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta_HPA.csv
         group: 'validation'
         input_channels: ['Actin']
         #output_channels: ['Nucleus']
@@ -79,4 +79,4 @@ lightning:
     limit_train_batches: 4500
     limit_val_batches: 450
     val_check_interval: 1.0
-    max_epochs: 40
+    max_epochs: 200
