@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 4.5e-06
+  base_learning_rate: 2.0e-06
   target: ldm.models.paired_autoencoder.VQModel
   params:
     embed_dim: 3
@@ -9,7 +9,7 @@ model:
     ddconfig:
       double_z: False
       z_channels: 3
-      resolution: 512
+      resolution: 256
       in_channels: 3
       out_ch: 3
       ch: 128
@@ -33,30 +33,30 @@ model:
 data:
   target: ldm.data.base.DataModuleFromConfig
   params:
-    batch_size: 4
+    batch_size: 16
     num_workers: 1
     wrap: True
     shuffle_val_dataloader: True
     train:
-      target: ldm.data.bf.BFPaint
+      target: ldm.data.bf2.BFPaint
       params:
-        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta.csv
+        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta_HPA.csv
         group: 'train'
         input_channels: ['BF']
         output_channels: ['Nucleus']
         flip_and_rotate: True
         size: 512
-        scale_factor: 1
+        scale_factor: 0.5
         return_info: False
     validation:
-      target: ldm.data.bf.BFPaint
+      target: ldm.data.bf2.BFPaint
       params:
-        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta.csv
+        path_to_metadata: /scratch/groups/emmalu/lightmycell/meta_HPA.csv
         group: 'validation'
         input_channels: ['BF']
         output_channels: ['Nucleus']
         size: 512
-        scale_factor: 1
+        scale_factor: 0.5
         flip_and_rotate: False
         return_info: False
 
@@ -79,4 +79,4 @@ lightning:
     limit_train_batches: 4500
     limit_val_batches: 450
     val_check_interval: 1.0
-    max_epochs: 40
+    max_epochs: 200
