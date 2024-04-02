@@ -4,7 +4,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import Dataset, ConcatDataset, ChainDataset, IterableDataset, DataLoader
-
+from torch.utils.data import RandomSampler
 from ldm.util import instantiate_from_config
 
 
@@ -98,8 +98,9 @@ class DataModuleFromConfig(pl.LightningDataModule):
             init_fn = worker_init_fn # <-
         else:
             init_fn = None
-        return DataLoader(self.datasets["train"], batch_size=self.batch_size,
-                          num_workers=self.num_workers, shuffle=False if is_iterable_dataset else True,
+        ran_sampler = RandomSampler(data_source=self.datasets["train"]) #, num_samples=160) # random sampling 100 batches per epoch
+        return DataLoader(self.datasets["train"], batch_size=self.batch_size, sampler=ran_sampler,
+                          num_workers=self.num_workers, #shuffle=False if is_iterable_dataset else True,
                           worker_init_fn=init_fn, persistent_workers=self.num_workers > 0,pin_memory=True)
 
     def _val_dataloader(self, shuffle=False):
