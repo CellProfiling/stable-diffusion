@@ -1354,21 +1354,6 @@ class LatentDiffusion(DDPM):
                 uc['c_concat'] = c['c_concat']
             if "c_crossattn" in c:
                 uc['c_crossattn'] = [torch.zeros_like(v) for v in c['c_crossattn']]
-            print('Generate images, crossattn condition: ', c['c_crossattn'][0].shape)
-            # shape = (c['c_concat'][0].shape[1],)+c['c_concat'][0].shape[2:]
-            # z_denoise_row = None
-            # with self.ema_scope("Plotting"):
-            #     sampler = DDIMSampler(self)
-            #     samples_ddim, _ = sampler.sample(S=ddim_steps,
-            #                                         conditioning=c,
-            #                                         batch_size=c['c_concat'][0].shape[0],
-            #                                         shape=shape,
-            #                                         unconditional_guidance_scale=unconditional_guidance_scale,
-            #                                         unconditional_conditioning=uc,
-            #                                         eta=ddim_eta,
-            #                                         log_every_t=20,
-            #                                         verbose=False)
-            # x_samples = self.decode_first_stage(samples_ddim)
 
             # get denoise row
             with self.ema_scope("Plotting"):
@@ -1384,6 +1369,18 @@ class LatentDiffusion(DDPM):
 
             columns = [samples_grid, ] + columns
             
+            # add 3 columns for organelle conditioned generation
+            for i in range(3):
+                c_ = c.copy()
+                org_c = torch.zeros((batch_size, 3))
+                org_c[:, i] = 1
+                c_["c_crossattn"] = [org_c]
+                with self.ema_scope("Plotting"):
+                    samples, _ = self.sample_log(cond=c_,batch_size=batch_size,ddim=use_ddim, unconditional_guidance_scale=unconditional_guidance_scale, unconditional_conditioning=uc, ddim_steps=ddim_steps,eta=ddim_eta)
+                x_samples = self.decode_first_stage(samples)
+                samples_grid = make_grid(x_samples[:N], nrow=1)
+                columns = [samples_grid, ] + columns
+
             if plot_denoise_rows and z_denoise_row is not None:
                 denoise_grid = self._get_denoise_row_from_list(z_denoise_row['pred_x0'])
                 # Fix size issue when there is only 1 image
