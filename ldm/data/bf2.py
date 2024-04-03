@@ -110,7 +110,8 @@ class BFPaint:
         print(f"Dataset group: {group}, length: {len(self.indices)}, in channels: {self.input_channels},  output channels: {self.output_channels}")
 
     def __len__(self):
-        return len(set(self.image_ids)) *2
+        #return len(set(self.image_ids)) * 3
+        return len(self.image_ids)
 
 
     def __getitem__(self, i):
