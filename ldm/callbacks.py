@@ -16,7 +16,7 @@ import torch
 import torchvision
 import wandb
 
-from ldm.evaluation import metrics
+from ldm.evaluation import metrics3
 from ldm.util import send_message_to_slack, send_image_to_slack
 
 
@@ -97,7 +97,7 @@ class ImageLogger(Callback):
         self.monitor_val_metric = monitor_val_metric
         self.metrics = {"train": defaultdict(list), "val": defaultdict(list)}
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        self.image_evaluator = metrics.ImageEvaluator(device=device)
+        self.image_evaluator = metrics3.ImageEvaluator(device=device)
 
     def _testtube(self, pl_module, images, samples, targets, refs, gt_locations, batch_idx, masks, bbox_labels, split):
         for k in images:
@@ -118,17 +118,15 @@ class ImageLogger(Callback):
 
             tag = f"{split}/batch{batch_idx}_{k}"
             wandb.log({tag: image}, step=pl_module.global_step)
-
-        mse, ssim, mse_bbox, ssim_bbox, feats_mse, samples_loc_probs, sc_gt_locations = self.image_evaluator.calc_metrics(samples, targets, refs, gt_locations, bbox_coords, masks, bbox_labels)
-        # pl_module.log(f"{split}/mse", mse) # Don't set `on_step` or `on_epoch` since this is already inside `on_train_batch_end()` or `on_validation_batch_end`
-        # pl_module.log(f"{split}/ssim", ssim)
+        print(samples.shape, targets.shape, refs.shape)
+        mse, ssim, mae, pcc, edist, cdist, iou = self.image_evaluator.calc_metrics(samples, targets)
         self.metrics[split]["mse"].append(mse)
         self.metrics[split]["ssim"].append(ssim)
-        self.metrics[split]["mse_bbox"].append(mse_bbox)
-        self.metrics[split]["ssim_bbox"].append(ssim_bbox)
-        self.metrics[split]["feats_mse"].append(feats_mse)
-        self.metrics[split]["samples_loc_probs"].append(samples_loc_probs)
-        self.metrics[split]["sc_gt_locations"].append(sc_gt_locations)
+        self.metrics[split]["mae"].append(mae)
+        self.metrics[split]["pcc"].append(pcc)
+        self.metrics[split]["edist"].append(edist)
+        self.metrics[split]["cdist"].append(cdist)
+        self.metrics[split]["iou"].append(iou)
 
     # @rank_zero_only
     def log_local(self, save_dir, split, images,
@@ -182,7 +180,6 @@ class ImageLogger(Callback):
             #gt_locations, bbox_coords, masks, bbox_labels = batch["matched_location_classes"], batch["bbox_coords"], batch["mask"], batch["bbox_label"]
             refs = torch.permute(batch["ref-image"], (0, 3, 1, 2))
             logger_log_images(pl_module, images, samples, targets, refs, [], [], [], [], batch_idx, split)
-            #logger_log_images(pl_module, images, samples, targets, refs, gt_locations, bbox_coords, masks, bbox_labels, batch_idx, split)
             
             if is_train:
                 pl_module.train()
@@ -218,18 +215,11 @@ class ImageLogger(Callback):
     @rank_zero_only
     def on_train_epoch_end(self, trainer, pl_module):
         print(f"Process {os.getpid()} in on_train_epoch_end(), global step {pl_module.global_step}")
+        #print(self.metrics["train"].items())
         for metric_name, metric_values in self.metrics["train"].items():
             self.metrics["train"][metric_name] = np.concatenate(metric_values, axis=0)
-        
-        ##########change by zoe#############
-        #if len(self.metrics["train"]) > 0:
-            #loc_acc, loc_macrof1, loc_microf1, feats_mse_mean = metrics.calc_localization_metrics(self.metrics["train"]["samples_loc_probs"], self.metrics["train"]["sc_gt_locations"], self.metrics["train"]["feats_mse"])
-        #else:
-            #loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
-        ####################################
-        loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
 
-        wandb.log({"train/mse": np.mean(self.metrics["train"]["mse"]), "train/ssim": np.mean(self.metrics["train"]["ssim"]), "train/mse_bbox": np.mean(self.metrics["train"]["mse_bbox"]), "train/ssim_bbox": np.mean(self.metrics["train"]["ssim_bbox"]), "train/feats_mse": feats_mse_mean, "train/loc_acc": loc_acc, "train/loc_macrof1": loc_macrof1, "train/loc_microf1": loc_microf1}, step=pl_module.global_step)
+        wandb.log({"train/mse": np.mean(self.metrics["train"]["mse"]), "train/ssim": np.mean(self.metrics["train"]["ssim"]), "train/pcc": np.mean(self.metrics["train"]["pcc"]), "train/cdist": np.mean(self.metrics["train"]["cdist"]), "train/edist": np.mean(self.metrics["train"]["edist"])}, step=pl_module.global_step)
         self.metrics["train"] = defaultdict(list)
 
     @rank_zero_only
@@ -246,15 +236,7 @@ class ImageLogger(Callback):
         for metric_name, metric_values in self.metrics["val"].items():
             self.metrics["val"][metric_name] = np.concatenate(metric_values, axis=0)
         
-        #####changed by zoe####
-        #if len(self.metrics["val"]) > 0:
-            #loc_acc, loc_macrof1, loc_microf1, feats_mse_mean = metrics.calc_localization_metrics(self.metrics["val"]["samples_loc_probs"], self.metrics["val"]["sc_gt_locations"], self.metrics["val"]["feats_mse"])
-        #else:
-            #loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
-        loc_acc = loc_macrof1 = loc_microf1 = feats_mse_mean = float("nan")
-        ########################
-
-        wandb.log({"val/mse": np.mean(self.metrics["val"]["mse"]), "val/ssim": np.mean(self.metrics["val"]["/ssim"]), "val/mse_bbox": np.mean(self.metrics["val"]["mse_bbox"]), "val/ssim_bbox": np.mean(self.metrics["val"]["ssim_bbox"]), "val/feats_mse": feats_mse_mean, "val/loc_acc": loc_acc, "val/loc_macrof1": loc_macrof1, "val/loc_microf1": loc_microf1}, step=pl_module.global_step)
+        wandb.log({"val/mse": np.mean(self.metrics["val"]["mse"]), "val/ssim": np.mean(self.metrics["val"]["ssim"]), "val/pcc": np.mean(self.metrics["val"]["pcc"]), "val/cdist": np.mean(self.metrics["val"]["cdist"]), "val/edist": np.mean(self.metrics["val"]["edist"])}, step=pl_module.global_step)
         self.metrics["val"] = defaultdict(list)
 
 
