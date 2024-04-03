@@ -1354,7 +1354,7 @@ class LatentDiffusion(DDPM):
                 uc['c_concat'] = c['c_concat']
             if "c_crossattn" in c:
                 uc['c_crossattn'] = [torch.zeros_like(v) for v in c['c_crossattn']]
-
+            print('Generate images, crossattn condition: ', c['c_crossattn'][0].shape)
             # shape = (c['c_concat'][0].shape[1],)+c['c_concat'][0].shape[2:]
             # z_denoise_row = None
             # with self.ema_scope("Plotting"):
