@@ -1372,7 +1372,7 @@ class LatentDiffusion(DDPM):
             # add 3 columns for organelle conditioned generation
             for i in range(3):
                 c_ = c.copy()
-                org_c = torch.zeros((batch_size, 3))
+                org_c = torch.zeros((batch_size, 3)).to(self.device)
                 org_c[:, i] = 1
                 c_["c_crossattn"] = [org_c]
                 with self.ema_scope("Plotting"):
