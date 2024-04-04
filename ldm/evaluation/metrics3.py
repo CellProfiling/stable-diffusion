@@ -128,5 +128,5 @@ class ImageEvaluator:
             intersection_per_chan = torch.sum(torch.logical_and(sampled_binary, target_binary), dim=(1, 2))
             union_per_chan = torch.sum(torch.logical_or(sampled_binary, target_binary), dim=(1, 2))
             iou_per_chan[i] = torch.div(intersection_per_chan, union_per_chan).to('cpu').detach().numpy()
-        print('Metric shapes: ', mse_per_chan.shape, ssim_per_chan.shape, cos_sim.shape, edists_per_chan.shape, iou_per_chan.shape)
+        #print('Metric shapes: ', mse_per_chan.shape, ssim_per_chan.shape, cos_sim.shape, edists_per_chan.shape, iou_per_chan.shape)
         return mse_per_chan, ssim_per_chan, mae_per_chan, pcc_per_chan, cos_sim, edists_per_chan, iou_per_chan
