@@ -27,6 +27,10 @@ def rescale_2_98(arr):
     arr = exposure.rescale_intensity(arr, in_range=(p2, p98), out_range=(0, 255)).astype(np.uint8)
     return arr
 
+def geo_mean(iterable):
+    a = np.array(iterable)
+    return a.prod()**(1.0/len(a))
+
 def prepare_input1(img_paths):
     imarray = []
     for img_path in img_paths:
@@ -41,20 +45,40 @@ def prepare_input1(img_paths):
     print(imarray.shape)   
     imarray = torch.from_numpy(imarray)
     imarray = rearrange(imarray, 'b h w c -> b c h w').contiguous()
-    assert imarray.shape == (1,3,256,256)
+    assert imarray.shape == (len(img_paths),3,256,256)
     return imarray
 
-def run_umap(feats, n_neighbors=15, n_components=3, min_dist=0.01, metric='euclidean'):
+def run_umap(feats, n_neighbors=15, n_components=3, min_dist=0.1, metric='euclidean'):
     umap_model = umap.UMAP(n_neighbors=n_neighbors, n_components=n_components, min_dist=min_dist, metric=metric)
     embedded_points = umap_model.fit_transform(feats)
     return embedded_points
 
-def plot_umap(embedded_points, labels, save_path = 'tmp.png'):
+def plot_umap(embedded_points, labels, plot_mean=True, save_path = 'tmp.png'):
+    unique_labels = np.unique(labels)
+    colors = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))  
+    # Generate colors for each label
+    colors = [
+        'blue', 'red', 'green', 'purple', 'orange', 'yellow', 'cyan', 'magenta', 'lime', 'pink',
+        'teal', 'lavender', 'brown', 'beige', 'maroon', 'orchid', 'olive', 'coral', 'navy', 'grey',
+        'indigo', 'violet', 'turquoise', 'salmon', 'tan', 'skyblue', 'plum', 'gold', 'silver', 'charcoal'
+    ]
     n_components = embedded_points.shape[1]
     if n_components == 2:
         plt.figure(figsize=(8, 6))
-        plt.scatter(embedded_points[:, 0], embedded_points[:, 1], c=labels, cmap='viridis', s=10)
-        plt.colorbar(label='Labels')
+        for i, label in enumerate(unique_labels):
+            mask = labels == label
+            #print(mask)
+            plt.scatter(embedded_points[mask, 0], embedded_points[mask, 1], label=label, color=colors[i], s=10, alpha = 0.1)
+            if plot_mean:
+                try:
+                    from statistics import geometric_mean
+                    d1_m = geometric_mean(embedded_points[mask, 0])
+                    d2_m = geometric_mean(embedded_points[mask, 1])
+                    plt.scatter(d1_m, d2_m, label=label+'_m', color=colors[i], marker=">", s=50)
+                except:
+                    print(label, np.sum(mask))
+        plt.legend()
+        #plt.colorbar(label='Labels')
         plt.title('UMAP Embedding (2D)')
         plt.xlabel('UMAP Dimension 1')
         plt.ylabel('UMAP Dimension 2')
@@ -62,22 +86,25 @@ def plot_umap(embedded_points, labels, save_path = 'tmp.png'):
     elif n_components == 3:
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot(111, projection='3d')
-        scatter = ax.scatter(embedded_points[:, 0], embedded_points[:, 1], embedded_points[:, 2], c=labels, cmap='viridis', s=10)
+        for i, label in enumerate(unique_labels):
+            mask = labels == label
+            scatter = ax.scatter(embedded_points[mask, 0], embedded_points[mask, 1], embedded_points[mask, 2], label=label, color=colors[i], alpha=0.2, s=10)
         ax.set_title('UMAP Embedding (3D)')
         ax.set_xlabel('UMAP Dimension 1')
         ax.set_ylabel('UMAP Dimension 2')
         ax.set_zlabel('UMAP Dimension 3')
-        plt.colorbar(scatter, label='Labels')
+        plt.legend()
+        #plt.colorbar(scatter, label='Labels')
         plt.savefig(save_path)
     else:
         print("Number of components should be either 2 or 3.")
 
 def chunker(seq, size):
-    return (seq[pos:pos + size] for pos in xrange(0, len(seq), size))
+    return (seq[pos:pos + size] for pos in range(0, len(seq), size))
 
 def generate_features(feat_compressed_path):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    config1 = OmegaConf.load('/scratch/users/tle1302/stable-diffusion/configs/autoencoder/configs/autoencoder/lmc_autoencoder_ActinMitoTubulin.f512_0.5.yaml')
+    config1 = OmegaConf.load('/scratch/users/tle1302/stable-diffusion/configs/autoencoder/lmc_autoencoder_ActinMitoTubulin.f512_0.5.yaml')
     checkpoint1 = '/scratch/users/tle1302/stable-diffusion/logs/2024-03-27T01-24-26_lmc_autoencoder_ActinMitoTubulin.f512_0.5/checkpoints/best.ckpt'
     #Get Dataloader
     model = instantiate_from_config(config1['model'])
@@ -88,20 +115,22 @@ def generate_features(feat_compressed_path):
     metadf = pd.read_csv('/scratch/groups/emmalu/lightmycell/meta.csv')
     img_modality_dict = metadf[metadf.Type == "BF"].set_index('Image_id').to_dict()['Ch']
     metadf = metadf[metadf.Type != "BF"]
+    metadf = metadf[metadf.Image_id !="image_2542"]
+    print(f'Generating embeddings of {metadf.shape[0]} images')
     metadf["img_paths"] = ["/".join(("/scratch/groups/emmalu/lightmycell/Images",r.Study, r.Id)) for i,r in metadf.iterrows()]
     feats = []
     loss_ = []
     with torch.no_grad():
         with model.ema_scope():
-            for df_ in chunker(metadf, 5):
+            for df_ in chunker(metadf, 16):
                 x = prepare_input1(df_.img_paths.tolist())
                 h, _, _ = model.encode(x.to(device))
                 ypred = model.decode(h)
-                loss = (x - ypred).abs()
+                loss = (x - ypred.to('cpu')).abs()
                 loss_.append(loss.mean())
-                feats.append(h)
-                print(f"MAE={loss.mean()}")
-    feats = np.stack(feats, axis=0)
+                feats.append(h.to('cpu').detach().numpy())
+    print(f"MAE={loss.mean()}")
+    feats = np.vstack(feats)#, axis=1)
     print(feats.shape)
     tl = [img_modality_dict[f] for f in metadf.Image_id]
     np.savez(feat_compressed_path, 
@@ -121,13 +150,23 @@ def main():
         tl = compressed["tl"]
         studies = compressed["study"]
         chs = compressed["ch"]
-    
-    embedded_points = run_umap(feats, n_components=2)
-    plot_dir = "/scratch/groups/emmalu/lightmycell/plots"
-    os.makedirs(plot_dir, exist_ok=True)
-    plot_umap(embedded_points, tl, save_path = f'{plot_dir}/umap_2d_transmittedlight.png')
-    plot_umap(embedded_points, chs, save_path = f'{plot_dir}/umap_2d_orgchannels.png')
-    #plot_umap(compressed["feats"], compressed["org"], n_components=2, save_path = 'tmp.png')
+    #print(f'Embedding dim {feats.shape}, {feats.reshape(feats.shape[0], -1).shape}') 
+    #print(tl, chs)
+    not_nu = chs != 'Nucleus'
+    print(not_nu)
+    print(feats.reshape(feats.shape[0], -1)[not_nu,:].shape)
+    tmp = feats.reshape(feats.shape[0], -1)[not_nu,:]
+    for nc in [2,3]:
+        embedded_points = run_umap(tmp, n_components=nc)
+        print(embedded_points.shape)
+        tl_ch = [f"{it1}_{it2}" for it1, it2 in zip(chs, tl)]
+        #print(tl_ch[np.where(not_nu)[0]])
+        plot_dir = "/scratch/groups/emmalu/lightmycell/plots"
+        os.makedirs(plot_dir, exist_ok=True)
+        plot_umap(embedded_points, np.array(tl_ch)[not_nu], save_path = f'{plot_dir}/umap_{nc}d_tlch.png') 
+        plot_umap(embedded_points, tl[not_nu], save_path = f'{plot_dir}/umap_{nc}d_transmittedlight.png')
+        plot_umap(embedded_points, chs[not_nu], save_path = f'{plot_dir}/umap_{nc}d_orgchannels.png')
+        plot_umap(embedded_points, studies[not_nu], plot_mean=False, save_path = f'{plot_dir}/umap_{nc}d_orgchannels.png')
 
 if __name__ == "__main__":
     main()
