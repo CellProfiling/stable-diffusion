@@ -244,6 +244,27 @@ def load_image(datasource, image_id, channels, tile):
     return image
     
 
+def load_jump(image_ids,rescale=True):
+    data_dir = "/scratch/groups/emmalu/JUMP/processed_tiled"
+    # JUMP channels
+    # 1: Mito, 2: AGP, 3: NucleoliRNA, 4: ER, 5: Nucleus, 6: BF
+    imgs = []
+    for image_path in image_ids:
+        imgarray = np.array(Image.open(f'{data_dir}/{image_path}'))
+        imgs.append(imgarray)
+    for i in range(3-len(imgs)):  # ch=1 don't work for normal conv set up, assert ch=3
+        imgs.append(imgarray)
+    full_res_image = np.stack(imgs, axis=2)
+    #combine channels into single multichannel image
+          
+    if rescale:
+        p2, p99 = np.percentile(full_res_image, (2, 99.8))
+        full_res_image = exposure.rescale_intensity(full_res_image, in_range=(p2, p99), out_range=(0, 255)).astype(np.uint8)
+    else:
+        full_res_image = (full_res_image/256).astype(np.uint8)
+    assert is_between_0_255(full_res_image)
+    return full_res_image
+
 def load_ometiff_image(image_id, chs, rescale=True):
     """
     Load ome.tiff image
