@@ -30,7 +30,7 @@ def one_hot_encode_locations(locations, location_mapping):
 
 class BFPaint:
 
-    def __init__(self, group='train', path_to_metadata=None, input_channels=None, output_channels=None, is_ldm=False, size=512, scale_factor=1, flip_and_rotate=True, return_info=False):
+    def __init__(self, group='train', path_to_metadata=None, input_channels=None, output_channels=None, is_ldm=False, size=512, scale_factor=1, flip_and_rotate=True, return_info=False, refine=False):
 
         self.is_ldm = is_ldm # False: AE, True: use inputs as ref-image, outputs as stage_1
         #Define channels
@@ -40,60 +40,41 @@ class BFPaint:
         else:
             self.output_channels = output_channels
         
-        #Define metadata (image path, datasource, indices)
         self.metadata = pd.read_csv(path_to_metadata)
-        #self.metadata = self.metadata[self.metadata.datasource=='lmc']
+        if refine:
+            self.metadata = self.metadata[self.metadata.datasource=='lmc']
+            # weights of ['Actin','Tubulin','Mitochondria'] = [24.98765432,  3.03903904,  0.3800939 ] 
+            ids_a = self.metadata[self.metadata.Ch=='Actin'].Image_id.tolist()
+            df_a = self.metadata.loc[np.repeat(self.metadata[self.metadata.Image_id.isin(ids_a)].index.values, 64)]
+            ids_t = self.metadata[self.metadata.Ch=='Tubulin'].Image_id.tolist()
+            df_t = self.metadata.loc[np.repeat(self.metadata[self.metadata.Image_id.isin(ids_t)].index.values, 7)]
+            self.metadata = pd.concat([self.metadata, df_a, df_t])
+        
         self.metadata['io'] = [('ref' if f in ['BF','Nucleus'] else 'org') for f in self.metadata.Type ]
-        self.metadata = self.metadata[self.metadata.Image_id !="image_2542"] # Study_29/image_2542 is empty on all channels
-        #print(self.metadata.io.value_counts()) #print(self.metadata.shape, set(self.input_channels + self.output_channels))
-        if (self.input_channels == 'org') & (self.input_channels == self.output_channels):
+        if (self.input_channels == 'org') & (self.input_channels == self.output_channels): # phase 1 org
             self.metadata = self.metadata[self.metadata.io == 'org']
-        elif self.output_channels == 'org':
+        elif self.output_channels == 'org': # phase 2 ldm
             imgs_keep = set(self.metadata.Image_id)
             for ch in set(self.input_channels): # BF, Nucleus
                 imgs_k = self.metadata.groupby('Image_id').agg({'Type': set })
                 imgs_k['Type'] = [(set(list(t)[0].split(',')) if len(t)==1 else t) for t in imgs_k.Type]
                 imgs_k = imgs_k.iloc[[(ch in f) for f in imgs_k.Type]]
                 # Check if this image_id also contains 1 of the organelle channels
-                #print(imgs_k.Type)
-                #print('Intersection: ', {'Mitochondria','Tubulin','Actin'}.intersection(imgs_k.Type[0]))
                 imgs_k = imgs_k.iloc[[len({'Mitochondria','Tubulin','Actin'}.intersection(f))>0 for f in imgs_k.Type]]
-                #print(imgs_k.Type)
                 imgs_keep = imgs_keep.intersection(imgs_k.index.tolist())# imgs_keep.update(imgs_k.index.tolist())
-            #print(len(imgs_keep))
+                
             self.metadata = self.metadata[self.metadata.Image_id.isin(imgs_keep)].drop_duplicates()
-        else:
+        else: # phase 1 ref, or bf -> nu
             imgs_keep = set(self.metadata.Image_id)
             for ch in set(self.input_channels + self.output_channels):
                 imgs_k = self.metadata.groupby('Image_id').agg({'Type': set })
                 imgs_k['Type'] = [(set(list(t)[0].split(',')) if len(t)==1 else t) for t in imgs_k.Type]
                 imgs_k = imgs_k.iloc[[(ch in f) for f in imgs_k.Type]]
                 imgs_keep = imgs_keep.intersection(imgs_k.index.tolist())# imgs_keep.update(imgs_k.index.tolist())
-            #print(len(imgs_keep))
+                
             self.metadata = self.metadata[self.metadata.Image_id.isin(imgs_keep)].drop_duplicates()
-        #print('After filtering for input/output channels: ', self.metadata.io.value_counts())
-        self.metadata['Ch'] = [f.split(',') for f in self.metadata.Type]
-        self.metadata = self.metadata.explode('Ch').reset_index()
-        #print(self.metadata, self.metadata.Ch.value_counts())
-        # TODO: redo split correctly
-        train_data, test_data = train_test_split(self.metadata, test_size=0.05, stratify=self.metadata.Study, random_state=42)
-        self.metadata["split"] = ["train" if idx in train_data.index else "validation" for idx in self.metadata.index]
-        # weights of ['Actin','Tubulin','Mitochondria'] = [24.98765432,  3.03903904,  0.3800939 ] 
-        #self.metadata = pd.concat([self.metadata, 
-        #                           self.metadata[self.metadata.Ch=='Actin'].repeat(65), 
-        #                           self.metadata[self.metadata.Ch=='Tubulin'].repeat(8)], ignore_index=True)
-        ids_a = self.metadata[self.metadata.Ch=='Actin'].Image_id.tolist()
-        df_a = self.metadata.loc[np.repeat(self.metadata[self.metadata.Image_id.isin(ids_a)].index.values, 64)]
-        ids_t = self.metadata[self.metadata.Ch=='Tubulin'].Image_id.tolist()
-        df_t = self.metadata.loc[np.repeat(self.metadata[self.metadata.Image_id.isin(ids_t)].index.values, 7)]
-        self.metadata = pd.concat([self.metadata, df_a, df_t])
-        self.metadata.drop(columns=['pixelsize_x','pixelsize_y','Image_dtype'], inplace=True)
-        self.metadata = self.metadata.sample(frac=1).reset_index(drop=True)        
-        #self.metadata.reset_index(drop=True, inplace=True)
-        #print(group, self.metadata[self.metadata.split==group].Ch.value_counts())
-        # self.indices = self.metadata[(self.metadata.split==group) & self.metadata.Type.isin(self.input_channels + self.output_channels)].index
-        # self.image_ids = self.metadata[(self.metadata.split==group) & self.metadata.Type.isin(self.input_channels + self.output_channels)].Image_id
-    
+            
+        self.metadata = self.metadata.sample(frac=1).reset_index(drop=True)   
         self.indices = self.metadata[(self.metadata.split==group)].index
         self.image_ids = self.metadata[(self.metadata.split==group)].Image_id
     
@@ -102,7 +83,7 @@ class BFPaint:
         self.final_size = int(size*scale_factor)
         self.transforms = [albumentations.geometric.resize.Resize(height=self.final_size, width=self.final_size, interpolation=cv2.INTER_LINEAR)]
         self.flip_and_rotate = flip_and_rotate
-        if self.flip_and_rotate: #will rotate by random angle and then horizontal flip with prob 0.5
+        if self.flip_and_rotate:
             self.transforms.extend([albumentations.RandomRotate90(p=1.0),
                             albumentations.HorizontalFlip(p=0.5)])
         self.data_augmentation = albumentations.Compose(self.transforms)
@@ -110,25 +91,24 @@ class BFPaint:
         print(f"Dataset group: {group}, length: {len(self.indices)}, in channels: {self.input_channels},  output channels: {self.output_channels}")
 
     def __len__(self):
-        #return len(set(self.image_ids)) * 3
-        return len(self.image_ids)
+        return len(self.image_ids) # len(set(self.image_ids)) * 3
+        #return 16 # testing #len(self.image_ids)
 
 
     def __getitem__(self, i):
         sample = {}
-
         #get image
         img_index = self.indices[i]
         info = self.metadata.iloc[img_index].to_dict()
         datasource = info["datasource"]
         img_id = info["Image_id"]
-        if (self.input_channels == 'org') & (self.input_channels == self.output_channels):
+        if (self.input_channels == 'org') & (self.input_channels == self.output_channels): # AE orgs
             Ch = info['Ch']
             if datasource == 'lmc':
                 image_id = "/".join([info["Study"], img_id])
                 imarray = image_processing.load_ometiff_image(image_id, [Ch, Ch, Ch], rescale=True)
                 targetarray = image_processing.load_ometiff_image(image_id, [Ch, Ch, Ch], rescale=True)
-                image_height, image_width = info["ImageHeight"], info["ImageWidth"]
+                (image_width, image_height) = imarray.shape[:2]
             elif datasource == 'HPA':
                 imarray = image_processing.load_intensity_rescaled_image(img_id)
                 mapping_d = {'Actin': 1, 'Nucleus': 2, 'Tubulin': 0, 'ER': 3, 'Mitochondria':1}
@@ -136,29 +116,45 @@ class BFPaint:
                 targetarray = imarray[:, :, in_chs]
                 imarray = imarray[:, :, in_chs]
                 (image_width, image_height) = imarray.shape[:2]
-            #print(imarray.shape, targetarray.shape, )
-        elif self.output_channels == 'org':
-            assert datasource == 'lmc'
+            elif datasource == 'jump':
+                imarray = image_processing.load_jump([info["Id"]])
+                targetarray = imarray.copy()
+                (image_width, image_height) = imarray.shape[:2]
+                
+        elif self.output_channels == 'org': # ldm
+            # assert datasource == 'lmc'
             img_df = self.metadata[self.metadata.Image_id == img_id] # all channels and stack for this image_id
-            
             in_chs = []
             #print(self.input_channels)
             for ch in self.input_channels:
                 if ch != 'BF':
-                    in_chs.append(ch)
+                    in_chs.append(ch if datasource == 'lmc' else img_df[img_df.Ch==ch].Id.values[0])
                 else: # sample 1 BF zstack
-                    in_chs.append(img_df[img_df.Type=='BF'].Id.sample(1).values[0].replace(img_id,'')[1:].replace('.ome.tiff',''))
+                    if datasource=='lmc':
+                        chosen_bf = img_df[img_df.Type=='BF'].Id.sample(1).values[0].replace(img_id,'')[1:].replace('.ome.tiff','')
+                    else:
+                        chosen_bf = img_df[img_df.Type=='BF'].Id.sample(1).values[0]
+                    in_chs.append(chosen_bf)
+                    
             possible_ch = set(img_df.Type.unique()).difference(['BF','Nucleus'])
             ch = random.choice(list(possible_ch))
-            #print(img_id, ch)
             info['Ch'] = ch # update organnelle for guide latent diffusion
-            info['BF_mode'] = img_df[img_df.Type=='BF'].Id.values[0].split('_')[2]
-            image_id = "/".join([info["Study"], img_id])
-            imarray = image_processing.load_ometiff_image(image_id, in_chs, rescale=True)
-            targetarray = image_processing.load_ometiff_image(image_id, [ch,ch,ch], rescale=True)
-            image_height, image_width = info["ImageHeight"], info["ImageWidth"]
+            #print(img_df, f'Possible ch {possible_ch}')
+            info['BF_mode'] = img_df[img_df.Type=='BF'].Ch.values[0]
+            if datasource == 'lmc':
+                image_id = "/".join([info["Study"], img_id])
+                imarray = image_processing.load_ometiff_image(image_id, in_chs, rescale=True)
+                targetarray = image_processing.load_ometiff_image(image_id, [ch,ch,ch], rescale=True)
+            elif datasource == 'jump':
+                imarray = image_processing.load_jump(in_chs)
+                print(img_df[img_df.Ch==ch])
+                out_chs = [img_df[img_df.Ch==ch].Id.values[0]]
+                #print(out_chs)    
+                targetarray = image_processing.load_jump(out_chs)
+            else:
+                print('datasource not implemented')
             
-            #print(image_id, 'Input: ', in_chs, 'Output:', ch, info['Ch'])
+            image_width, image_height = imarray.shape[:2]
         else:
             if datasource == 'lmc':
                 img_df = self.metadata[self.metadata.Image_id == img_id]
@@ -168,7 +164,6 @@ class BFPaint:
                     if ch != 'BF':
                         in_chs.append(ch)
                     else:
-                        #print(img_df.Id.sample(1).values)
                         in_chs.append(img_df.Id.sample(1).values[0].replace(img_id,'')[1:].replace('.ome.tiff',''))
                 #print(self.input_channels, self.output_channels)
                 if self.input_channels == self.output_channels:
@@ -182,12 +177,12 @@ class BFPaint:
                             #print(img_df.Id.sample(1).values)   
                             out_chs.append(img_df.Id.sample(1).values[0].replace(img_id,'')[1:].replace('.ome.tiff',''))
                             
-                image_height, image_width = info["ImageHeight"], info["ImageWidth"]
-                #print(in_chs, out_chs) 
-                
                 image_id = "/".join([info["Study"], img_id])
                 imarray = image_processing.load_ometiff_image(image_id, in_chs, rescale=True)
                 targetarray = image_processing.load_ometiff_image(image_id, out_chs, rescale=True)
+                #print(imarray.shape, targetarray.shape)
+                image_width, image_height = imarray.shape[:2]
+                #print(in_chs, out_chs) 
                 
             elif datasource == "HPA":
                 imarray = image_processing.load_intensity_rescaled_image(img_id)
@@ -203,6 +198,29 @@ class BFPaint:
                 targetarray = imarray[:, :, out_chs]
                 imarray = imarray[:, :, in_chs]
                 (image_width, image_height) = imarray.shape[:2]
+            elif datasource == 'jump':
+                img_df = self.metadata[self.metadata.Image_id == img_id]
+                in_chs = []
+                for ch in self.input_channels:
+                    if ch != 'BF':
+                        in_chs.append(img_df[img_df.Ch==ch].Id.values[0])
+                    else:
+                        in_chs.append(img_df[img_df.Type=='BF'].Id.sample(1).values[0])
+                if self.input_channels == self.output_channels:
+                    out_chs = in_chs
+                else:
+                    out_chs = []
+                    for ch in self.output_channels:
+                        if ch != 'BF':
+                            out_chs.append(img_df[img_df.Ch==ch].Id.values[0])
+                        else:
+                            out_chs.append(img_df[img_df.Type=='BF'].Id.sample(1).values[0])
+                
+                imarray = image_processing.load_jump(in_chs)
+                targetarray = image_processing.load_jump(out_chs)
+                (image_width, image_height) = imarray.shape[:2]
+                
+                print('JUMP:', in_chs, out_chs)
             else:
                 print('datasource not implemented')
         
@@ -226,7 +244,7 @@ class BFPaint:
                            "ref-image": imarray, 
                            "location_classes": one_hot_encode_locations(info["Ch"], location_mapping),
                            "BF_mode": info["BF_mode"]})
-            #print(sample['BF_mode']) 
+            print(sample['BF_mode']) 
         else:
             sample.update({"image": imarray, "ref-image": targetarray, "location_classes": one_hot_encode_locations(info["Ch"], location_mapping)}) 
         if self.return_info:
@@ -263,7 +281,7 @@ class BFClassEmbedder(nn.Module):
             if self.use_loc_embedding:
                 embeder = self.loc_embedding.to(batch["location_classes"].device)
                 embed.append(embeder(batch["location_classes"]))
-                #print('Embeding locations: ', batch["location_classes"] ,embeder(batch["location_classes"]))
+                #print('Embeding locations: ', batch["location_classes"].shape,  batch["location_classes"] ,embeder(batch["location_classes"]))
             else:
                 embed.append(batch["location_classes"])
                 #print(batch["location_classes"])
