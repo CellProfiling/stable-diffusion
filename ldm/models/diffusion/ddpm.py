@@ -1392,6 +1392,7 @@ class LatentDiffusion(DDPM):
                     samples, _ = self.sample_log(cond=c_,batch_size=batch_size,ddim=use_ddim, unconditional_guidance_scale=unconditional_guidance_scale, unconditional_conditioning=uc, ddim_steps=ddim_steps,eta=ddim_eta)
                 x_samples = self.decode_first_stage(samples)
                 samples_grid = make_grid(x_samples[:N], nrow=1)
+                samples_grid = torch.clip(samples_grid, -1.0, 1.0)
                 columns = [samples_grid, ] + columns
 
             if plot_denoise_rows and z_denoise_row is not None:
