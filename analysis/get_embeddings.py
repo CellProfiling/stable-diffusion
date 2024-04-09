@@ -154,8 +154,8 @@ def main():
     #print(tl, chs)
     not_nu = chs != 'Nucleus'
     print(not_nu)
-    print(feats.reshape(feats.shape[0], -1)[not_nu,:].shape)
-    tmp = feats.reshape(feats.shape[0], -1)[not_nu,:]
+    print(feats.reshape(feats.shape[0], -1)[not_nu,:].squeeze().shape)
+    tmp = feats.reshape(feats.shape[0], -1)[not_nu,:].squeeze()
     for nc in [2,3]:
         embedded_points = run_umap(tmp, n_components=nc)
         print(embedded_points.shape)
@@ -166,7 +166,7 @@ def main():
         plot_umap(embedded_points, np.array(tl_ch)[not_nu], save_path = f'{plot_dir}/umap_{nc}d_tlch.png') 
         plot_umap(embedded_points, tl[not_nu], save_path = f'{plot_dir}/umap_{nc}d_transmittedlight.png')
         plot_umap(embedded_points, chs[not_nu], save_path = f'{plot_dir}/umap_{nc}d_orgchannels.png')
-        plot_umap(embedded_points, studies[not_nu], plot_mean=False, save_path = f'{plot_dir}/umap_{nc}d_orgchannels.png')
+        plot_umap(embedded_points, studies[not_nu], plot_mean=False, save_path = f'{plot_dir}/umap_{nc}d_studies.png')
 
 if __name__ == "__main__":
     main()
