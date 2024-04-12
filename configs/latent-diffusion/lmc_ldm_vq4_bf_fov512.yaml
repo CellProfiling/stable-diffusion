@@ -156,4 +156,4 @@ lightning:
     limit_train_batches: 4500
     limit_val_batches: 450
     val_check_interval: 1.0
-    max_epochs: 40
+    max_epochs: 300

@@ -2,7 +2,7 @@ model:
   base_learning_rate: 2.0e-6   # set to target_lr by starting main.py with '--scale_lr True'; doesn't need to change this when using different numbers of GPUs
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
-    ckpt_path: /scratch/users/tle1302/stable-diffusion/logs/2024-03-27T09-32-21_lmc_ldm_vq4_bfNucleus_ActinTubulin_fov512/checkpoints/last.ckpt
+    ckpt_path: null #/scratch/users/tle1302/stable-diffusion/logs/2024-03-27T09-32-21_lmc_ldm_vq4_bfNucleus_ActinTubulin_fov512/checkpoints/last.ckpt
     linear_start: 0.0015
     linear_end: 0.0155
     num_timesteps_cond: 1
@@ -15,7 +15,7 @@ model:
     channels: 3
     cond_stage_trainable: true
     concat_mode: false # this will set conditioning_key to "crossattn" if not exists
-    conditioning_key: concat
+    conditioning_key: concat #hybrid
     cond_dropout: 0.1 # dropout conditions for class-conditioned model
     # scale_by_std: true
     scale_factor: 0.18215
@@ -36,8 +36,8 @@ model:
         num_heads: 8
         use_scale_shift_norm: True
         resblock_updown: True
-        # use_spatial_transformer: True
-        # context_dim: 384
+        #use_spatial_transformer: True
+        #context_dim: 3 
 
     first_stage_config:
       target: ldm.models.autoencoder.VQModelInterface
@@ -45,7 +45,7 @@ model:
         embed_dim: 3
         n_embed: 8192
         # autoencoder for the output channels
-        ckpt_path: /scratch/users/tle1302/stable-diffusion/logs/2024-03-27T01-24-26_lmc_autoencoder_ActinMitoTubulin.f512_0.5/checkpoints/last.ckpt
+        ckpt_path: /scratch/users/tle1302/stable-diffusion/logs/2024-03-27T01-24-26_lmc_autoencoder_ActinMitoTubulin.f512_0.5/checkpoints/best.ckpt
         ddconfig:
           double_z: false
           z_channels: 3
@@ -124,7 +124,7 @@ data:
         is_ldm: True
         size: 512
         scale_factor: 0.5
-        flip_and_rotate: False
+        flip_and_rotate: True
         return_info: False
 
 lightning:
@@ -149,8 +149,8 @@ lightning:
           plot_denoise_rows: false
           plot_progressive_rows: false
           plot_diffusion_rows: false
-          plot_inputs: true
-          plot_reconstructions: true
+          plot_inputs: false
+          plot_reconstructions: false
           mix_sample: false
           n_row: 8
 

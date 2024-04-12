@@ -38,7 +38,7 @@ data:
     wrap: True
     shuffle_val_dataloader: True
     train:
-      target: ldm.data.bf.BFPaint
+      target: ldm.data.bf2.BFPaint
       params:
         path_to_metadata: /scratch/groups/emmalu/lightmycell/meta_HPA.csv
         group: 'train'
@@ -49,7 +49,7 @@ data:
         scale_factor: 0.5
         return_info: False
     validation:
-      target: ldm.data.bf.BFPaint
+      target: ldm.data.bf2.BFPaint
       params:
         path_to_metadata: /scratch/groups/emmalu/lightmycell/meta_HPA.csv
         group: 'validation'
@@ -68,7 +68,7 @@ lightning:
         batch_frequency: 1000
         log_validation: true
         val_batch_frequency: 1000
-        max_images: 8
+        max_images: 16
         increase_log_steps: False
         log_first_step: true
         log_on_batch_idx: true
@@ -77,6 +77,6 @@ lightning:
     benchmark: True
     accumulate_grad_batches: 2
     limit_train_batches: 4500
-    limit_val_batches: 450
+    limit_val_batches: 200
     val_check_interval: 1.0
     max_epochs: 100
