@@ -196,7 +196,7 @@ class ImageLogger(Callback):
 
     @rank_zero_only
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        print(f"Process {os.getpid()} in on_train_batch_end(), batch_idx {batch_idx}, global step {pl_module.global_step}")
+        # print(f"Process {os.getpid()} in on_train_batch_end(), batch_idx {batch_idx}, global step {pl_module.global_step}")
         check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
         if not self.disabled and (pl_module.global_step > 0 or self.log_first_step) and self.check_frequency(check_idx):
             print(f"Logging training images in batch {batch_idx} at step {pl_module.global_step}")
@@ -204,7 +204,7 @@ class ImageLogger(Callback):
 
     @rank_zero_only
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        print(f"Process {os.getpid()} in on_validation_batch_end(), batch_idx {batch_idx}, global step {pl_module.global_step}")
+        # print(f"Process {os.getpid()} in on_validation_batch_end(), batch_idx {batch_idx}, global step {pl_module.global_step}")
         if self.log_validation and batch_idx % self.val_batch_frequency == 0 and not self.disabled and pl_module.global_step > 0:
             print(f"Logging validation images in batch {batch_idx}")
             self.log_img(pl_module, batch, batch_idx, split="val")
@@ -214,7 +214,7 @@ class ImageLogger(Callback):
 
     @rank_zero_only
     def on_train_epoch_end(self, trainer, pl_module):
-        print(f"Process {os.getpid()} in on_train_epoch_end(), global step {pl_module.global_step}")
+        # print(f"Process {os.getpid()} in on_train_epoch_end(), global step {pl_module.global_step}")
         #print(self.metrics["train"].items())
         for metric_name, metric_values in self.metrics["train"].items():
             self.metrics["train"][metric_name] = np.concatenate(metric_values, axis=0)
