@@ -82,4 +82,4 @@ lightning:
     limit_val_batches: 450
     num_sanity_val_steps: 0 
     val_check_interval: 1.0
-    max_epochs: 400
+    max_epochs: 1000
