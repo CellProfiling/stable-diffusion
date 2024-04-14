@@ -7,7 +7,7 @@ from packaging import version
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
-from streaming import StreamingDataset
+#from streaming import StreamingDataset
 from torch.utils.data import DataLoader
 
 from ldm.parse import get_parser, separate_args
@@ -392,7 +392,8 @@ if __name__ == "__main__":
         nowname = now + name + opt.postfix
         logdir = os.path.join(opt.logdir, "debug_logs" if opt.debug else "logs", nowname)
         os.makedirs(logdir)
-    # wandb.init(project="super-multiplex-cell", config=opt, resume="allow", settings=wandb.Settings(start_method="fork"), name=nowname, mode="offline" if opt.debug else "online", id=nowname)
+    import wandb
+    wandb.init(project="super-multiplex-cell", config=opt, resume="allow", settings=wandb.Settings(start_method="fork"), name=nowname, mode="offline" if opt.debug else "online", id=nowname)
     print(logdir)
     print(opt)
     if opt.debug:
