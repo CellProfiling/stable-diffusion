@@ -168,3 +168,4 @@ cython_debug/
 # Project specific
 wandb/
 *.lprof
+slu*.out
