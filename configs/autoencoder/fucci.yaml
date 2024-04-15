@@ -44,7 +44,7 @@ data:
         group: 'train'
         channels_in: [1,None,0]
         channels_out: [2,3,None]
-        rotate_and_flip: false
+        rotate_and_flip: true #false
         crop_size: 512
         # crop_type: cells # Train with FOV
         scale_factor: 0.5
@@ -80,4 +80,5 @@ lightning:
     limit_val_batches: 200
     # limit_train_batches: 10
     # limit_val_batches: 10
+    num_sanity_val_steps: 1
     val_check_interval: 1.0
