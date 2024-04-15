@@ -7,7 +7,7 @@ from packaging import version
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
-from streaming import StreamingDataset
+#from streaming import StreamingDataset
 from torch.utils.data import DataLoader
 
 from ldm.parse import get_parser, separate_args
