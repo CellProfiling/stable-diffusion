@@ -394,7 +394,8 @@ if __name__ == "__main__":
         nowname = now + name + opt.postfix
         logdir = os.path.join(opt.logdir, "debug_logs" if opt.debug else "logs", nowname)
         os.makedirs(logdir)
-    # wandb.init(project="super-multiplex-cell", config=opt, resume="allow", settings=wandb.Settings(start_method="fork"), name=nowname, mode="offline" if opt.debug else "online", id=nowname)
+    import wandb
+    wandb.init(project="super-multiplex-cell", config=opt, resume="allow", settings=wandb.Settings(start_method="fork"), name=nowname, mode="offline" if opt.debug else "online", id=nowname)
     print(logdir)
     print(opt)
     if opt.debug:
