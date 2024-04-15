@@ -210,11 +210,14 @@ class Fucci:
         else:
             raise ValueError(f"Unknown crop type: {crop_type}")
         self.final_size = int(crop_size * scale_factor)
-        transforms.append(albumentations.SmallestMaxSize(max_size=self.final_size, interpolation=cv2.INTER_LINEAR))
+        transforms = []
         if rotate_and_flip:
-            # transforms.extend([albumentations.Rotate(limit=180, border_mode=cv2.BORDER_REFLECT_101, p=1.0, interpolation=cv2.INTER_NEAREST),
-            #     albumentations.HorizontalFlip(p=0.5)])
-            raise NotImplementedError("Rotation and flipping not implemented since cell bounding box positions are not rotated and flipped")
+            transforms.extend([albumentations.RandomRotate90(p=1.0),
+                                albumentations.HorizontalFlip(p=0.5),
+                                albumentations.RandomResizedCrop(height=self.final_size, width=self.final_size, scale=(0.7,0.95), p=0.5),
+                                ])
+        transforms.extend([albumentations.geometric.resize.Resize(height=self.final_size, width=self.final_size, interpolation=cv2.INTER_LINEAR)])
+        self.data_augmentation = albumentations.Compose(transforms)
         self.preprocessor = albumentations.Compose(transforms)
         print(f"Dataset group: {group}, length: {len(self.indexes)}, image channels: {self.channels_in} > {self.channels_out}")
 
