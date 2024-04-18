@@ -22,8 +22,8 @@ def read_image(location):
         metadata   = tif.ome_metadata # Get the existing metadata in a DICT
     return image_data, metadata
 
-def rescale_2_98(arr):
-    p2, p98 = np.percentile(arr, (2, 99.8))
+def rescale_2_98(arr, l_thres=2, h_thres=99.8):
+    p2, p98 = np.percentile(arr, (l_thres, h_thres))
     arr = exposure.rescale_intensity(arr, in_range=(p2, p98), out_range=(0, 255)).astype(np.uint8)
     return arr
 
