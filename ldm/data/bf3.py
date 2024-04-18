@@ -22,6 +22,7 @@ import numpy as np
 import tifffile
 from analysis.get_embeddings import rescale_2_98
 from skimage.filters import threshold_local
+from PIL import Image
 
 location_mapping = {"Mitochondria": 0, "Actin": 1, "Tubulin": 2}
 tiff_ch_maping = {"BF": 0, "Nucleus": 1, "Mitochondria": 2, "Actin": 3, "Tubulin": 4}
@@ -40,40 +41,33 @@ def read_ome_tiff_rescale(file_id, mode='DIC'):
     img_rescale = np.stack(img_rescale, axis=2)
     return img_rescale
     
-def process_dic(img):
-    img = 65535 - img # invert bacground
-    block_size = 75
-    local_thresh = threshold_local(img, block_size, offset=10)
-    img_local = img*(img > local_thresh)
-    return img_local
-    
-"""
-def artificial_oversample(df, class='TL'):
-    class_counts = df[class].value_counts()
-    class_ratios = class_counts / len(df)
-    # Find the class with the smallest and largest ratio
-    smaller_class = class_ratios.idxmin()
-    larger_class = class_ratios.idxmax()
-    
-    # Calculate the number of times to repeat the smaller class samples
-    repeat_factor = int(class_ratios[larger_class] / class_ratios[smaller_class])
-    
-    # Initialize an empty DataFrame to store repeated samples
-    repeated_df = pd.DataFrame()
-    
-    # Repeat the smaller class rows to match the ratio of the larger class
-    for class_name, count in class_counts.items():
-        if class_name == smaller_class:
-            repeat_count = count * repeat_factor
-        else:
-            repeat_count = count
-        class_rows = df[df['class'] == class_name]
-        repeated_df = pd.concat([repeated_df, class_rows.sample(repeat_count, replace=True)], ignore_index=True)
-    
-    balanced_df = pd.concat([df, repeated_df], ignore_index=True)
-    return balanced_df
-"""
 
+jump_location_mapping = {"Mitochondria": 1, "Actin": 2, "Tubulin": 4, "Nucleus": 5, "BF": 6}
+def load_jump(file_id, chs, rescale=True):
+    data_dir = "/scratch/groups/emmalu/JUMP/processed_tiled"
+    # JUMP channels  {1: Mito, 2: AGP, 3: NucleoliRNA, 4: ER, 5: Nucleus, 6: BF}
+    img_id, tile = file_id.split('_')
+    
+    imgs = []
+    for ch in chs:
+        image_path = img_id + f"p01-ch{jump_location_mapping[ch]}sk1fk1fl1_{int(tile)}.png"
+        imgarray = np.array(Image.open(f'{data_dir}/{image_path}'))
+        imgs.append(imgarray)
+        
+    for i in range(3-len(chs)):  # ch=1 don't work for normal conv set up, assert ch=3
+        imgs.append(imgarray)
+    full_res_image = np.stack(imgs, axis=2)
+    if rescale:
+        img_rescale = []
+        for ch in range(3):
+            img_ = rescale_2_98(full_res_image[:,:,ch])
+            #print(img_.mean(), full_res_image[:,:,ch].mean())
+            img_rescale.append(img_)
+        img_rescale = np.stack(img_rescale, axis=2)
+    
+    return full_res_image
+
+    
 class BFPaint:
 
     def __init__(self, group='train', path_to_metadata=None, input_channels=None, output_channels=None, is_ldm=False, size=512, scale_factor=1, flip_and_rotate=True, return_info=False, refine=False):
@@ -86,9 +80,9 @@ class BFPaint:
         else:
             self.output_channels = output_channels
         
-        self.metadata = pd.read_csv(path_to_metadata, header=1)
+        self.metadata = pd.read_csv(path_to_metadata)
+        #self.metadata = self.metadata[self.metadata.Study == 'jump']
         print(self.metadata.shape)
-        print(output_channels, output_channels == ['Actin', 'Actin', 'Actin'])
         #self.metadata = self.metadata[self.metadata.Image_id !="image_2542"]
         if output_channels == ['Actin', 'Actin', 'Actin']:
             self.metadata = self.metadata[[orgs.split(',')[2]=='1' for orgs in self.metadata.organelles]]
@@ -106,6 +100,7 @@ class BFPaint:
         #if refine:
             
         self.metadata["split"] = ["train" if idx in train_data.index else "validation" for idx in self.metadata.index]
+        self.metadata.loc[(self.metadata.split=='validation') & (self.metadata.Study=='jump'), 'split'] = 'extra'
         self.metadata = self.metadata.sample(frac=1).reset_index(drop=True)   
         self.indices = self.metadata[(self.metadata.split==group)].index
         self.image_ids = self.metadata[(self.metadata.split==group)].Id
@@ -146,17 +141,21 @@ class BFPaint:
         cond = list(map(int, info["organelles"].split(',')))
         cond = torch.tensor(cond[-3:])
         
-        img = read_ome_tiff_rescale(file_id, mode= info['TL'])
-        in_chs = [tiff_ch_maping[ch] for ch in self.input_channels]
-        out_chs = [tiff_ch_maping[ch] for ch in self.output_channels]
-        imarray = img[:,:,in_chs]
-        targetarray = img[:,:,out_chs]
-        #(imarray.shape, targetarray.shape)
+        if info['Study'] == 'jump':
+            imarray = load_jump(file_id, self.input_channels, rescale=True)
+            targetarray = load_jump(file_id, self.output_channels, rescale=True)
+        else: #lmc
+            img = read_ome_tiff_rescale(file_id, mode= info['TL'])
+            in_chs = [tiff_ch_maping[ch] for ch in self.input_channels]
+            out_chs = [tiff_ch_maping[ch] for ch in self.output_channels]
+            imarray = img[:,:,in_chs]
+            targetarray = img[:,:,out_chs]
+        (imarray.shape, targetarray.shape)
         
         assert image_processing.is_between_0_255(imarray)
         assert image_processing.is_between_0_255(targetarray)
         
-        if True: #info['TL'] == 'DIC': #info['Study'] in ['Study_6', 'Study_8', 'Study_9']:
+        if info['Study'] != 'jump': #info['TL'] == 'DIC': #info['Study'] in ['Study_6', 'Study_8', 'Study_9']:
             transformed = self.data_augmentation(image=imarray, mask=targetarray)
         else:
             transformed = self.data_augmentation_simple(image=imarray, mask=targetarray)
