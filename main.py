@@ -7,8 +7,6 @@ from packaging import version
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
-#from streaming import StreamingDataset
-from torch.utils.data import DataLoader
 
 from ldm.parse import get_parser, separate_args
 from ldm.util import instantiate_from_config, send_message_to_slack
@@ -186,36 +184,17 @@ def main(opt, logdir, nowname):
     trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
     trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
     trainer.logdir = logdir  ###
-    print('Streaming bool:', opt.streaming)
-    # data
-    if opt.streaming:
-        # Remote directory (S3 or local filesystem) where dataset is stored
-        remote_dir = 's3://ai-residency-stanford-subcellgenai/super_multiplex_cell/data/hpa23_rescaled_mds'
-
-        # Local directory where dataset is cached during operation
-        local_dir = '/scratch/users/xikunz2/stable-diffusion/data/hpa23_rescaled_mds'
-
-        # Create PyTorch DataLoader
-        if opt.debug:
-            train_split = valid_split = test_split = 'train_subset'
-        else:
-            train_split, valid_split, test_split = 'train', 'validation', 'test'
-        train_dataset = StreamingDataset(local=f"{local_dir}/train", remote=f"{remote_dir}/{train_split}", split=None, shuffle=True)
-        train_dataloader = DataLoader(train_dataset)
-        valid_dataset = StreamingDataset(local=f"{local_dir}/validation", remote=f"{remote_dir}/{valid_split}", split=None, shuffle=False)
-        valid_dataloader = DataLoader(valid_dataset)
-        test_dataset = StreamingDataset(local=f"{local_dir}/test", remote=f"{remote_dir}/{test_split}", split=None, shuffle=False)
-        test_dataloader = DataLoader(test_dataset)
-    else:
-        data = instantiate_from_config(config.data)
-        # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
-        # calling these ourselves should not be necessary but it is.
-        # lightning still takes care of proper multiprocessing though
-        data.prepare_data()
-        data.setup()
-        print("#### Data #####")
-        for k in data.datasets:
-            print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
+    print('Streaming bool:', opt.streaming) # False, No streaming for this project
+    
+    data = instantiate_from_config(config.data)
+    # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
+    # calling these ourselves should not be necessary but it is.
+    # lightning still takes care of proper multiprocessing though
+    data.prepare_data()
+    data.setup()
+    print("#### Data #####")
+    for k in data.datasets:
+        print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
 
     # configure learning rate
     bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
@@ -263,35 +242,15 @@ def main(opt, logdir, nowname):
     # run
     if opt.train:
         try:
-            if opt.streaming:
-                trainer.fit(model, train_dataloader, valid_dataloader)
-            else:
-                trainer.fit(model, data)
+            trainer.fit(model, data)
         except Exception:
             melk()
             if "log_to_slack" in lightning_config.callbacks.image_logger.params and lightning_config.callbacks.image_logger.params.log_to_slack:
                 send_message_to_slack("Oops, the diffusion model training process has stopped unexpectedly")
             raise
     if not opt.no_test and not trainer.interrupted:
-        if opt.streaming:
-            trainer.test(model, test_dataloader)
-        else:
-            trainer.test(model, data)
-    # except Exception:
-    #     if opt.debug and trainer.global_rank == 0:
-    #         try:
-    #             import pudb as debugger
-    #         except ImportError:
-    #             import pdb as debugger
-    #         debugger.post_mortem()
-    #     raise
-    # finally:
-        # move newly created debug project to debug_runs
-    # if opt.debug and not opt.resume and trainer.global_rank == 0:
-    #     dst, name = os.path.split(logdir)
-    #     dst = os.path.join(dst, "debug_runs", name)
-    #     os.makedirs(os.path.split(dst)[0], exist_ok=True)
-    #     os.rename(logdir, dst)
+        trainer.test(model, data)
+            
     if trainer.global_rank == 0:
         print(trainer.profiler.summary())
 
@@ -341,9 +300,7 @@ if __name__ == "__main__":
 
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
-    # add cwd for convenience and to make classes in this file available when
-    # running as `python main.py`
-    # (in particular `main.DataModuleFromConfig`)
+    # add cwd for convenience and to make classes in this file available when running as `python main.py` (in particular `main.DataModuleFromConfig`)
     sys.path.append(os.getcwd())
 
     parser = get_parser()
