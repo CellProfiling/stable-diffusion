@@ -42,6 +42,7 @@ This should contains:
 ### Docker container:
 You can test the winning algorithm on grand challenge platform [here](https://grand-challenge.org/algorithms/lmc_control/).
 The code to build and run docker container is also provided in this repo. This docker container takes transmitted light tiff as input, and output 4 same size predicted organelle tiff as outputs.
+
 You can also download the docker container image separately from [here](https://ell-vault.stanford.edu/dav/trangle/www/ISBI2024_lmc_algo0_latest.tar.gz) to test locally. The docker images of course contains the checkpoints described above. 
 
 ### Example results
@@ -85,5 +86,5 @@ Each model configuration:
 ```
 
 
-### Other attempt (in Match 2024)
+### Other attempt (in March 2024)
 As some might have guessed by the repo, I did try latent diffusion for this problem, since modelling the joint distribution and conditioning of multiple different channel combination sound promising. However, my limited attempt on this dataset showed that the performance of 1 diffusion model is subpar to individual organelle models. This approach did work better on a different dataset, where each FOV contains all channels of interest.
