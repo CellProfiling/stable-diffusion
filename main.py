@@ -9,7 +9,7 @@ from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
 
 from ldm.parse import get_parser, separate_args
-from ldm.util import instantiate_from_config, send_message_to_slack
+from ldm.util import instantiate_from_config
 
 
 # @profile
@@ -249,11 +249,7 @@ def main(opt, logdir, nowname):
             trainer.fit(model, data)
         except Exception:
             melk()
-            if (
-                "log_to_slack" in lightning_config.callbacks.image_logger.params
-                and lightning_config.callbacks.image_logger.params.log_to_slack
-            ):
-                send_message_to_slack(
+            print(
                     "Oops, the diffusion model training process has stopped unexpectedly"
                 )
             raise
