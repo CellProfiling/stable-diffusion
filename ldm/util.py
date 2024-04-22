@@ -1,68 +1,17 @@
 import importlib
 
-import torch
-import numpy as np
-from collections import abc
-from einops import rearrange
-from functools import partial
-
 import multiprocessing as mp
 from multiprocessing import Pool
 from threading import Thread
 from queue import Queue
-
 from inspect import isfunction
+from collections import abc
+from functools import partial
+
+import numpy as np
+import torch
 from PIL import Image, ImageDraw, ImageFont
-import os
 
-from slack_sdk import WebClient
-
-SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
-if SLACK_BOT_TOKEN:
-    client = WebClient(SLACK_BOT_TOKEN)
-    try:
-        auth_test = client.auth_test()
-        bot_user_id = auth_test["user_id"]
-        print(f"SLACK_BOT_TOKEN is valid, app's bot user: {bot_user_id}")
-    except Exception:
-        SLACK_BOT_TOKEN = None
-        print("WARNING: Invalid SLACK_BOT_TOKEN, slack upload will be disabled")
-else:
-    print("WARNING: SLACK_BOT_TOKEN is not set, slack upload will be disabled")
-
-def send_message_to_slack(message, channel="#proj-wholecellmodeling"):
-    if SLACK_BOT_TOKEN is None:
-        print(f"WARNING: slack report is disabled (SLACK_BOT_TOKEN not set), message: {message}")
-        return
-    client = WebClient(SLACK_BOT_TOKEN)
-    client.chat_postMessage(
-        channel=channel,
-        blocks=[{
-			"type": "section",
-			"text": {
-				"type": "mrkdwn",
-				"text": ":wave: " + message
-            },
-        }]
-    )
-
-def send_image_to_slack(message, file_path, file_name=None, channel="#proj-wholecellmodeling"):
-    if SLACK_BOT_TOKEN is None:
-        print(f"WARNING: slack report is disabled (SLACK_BOT_TOKEN not set), message: {message}")
-        return
-    client = WebClient(SLACK_BOT_TOKEN)
-    file_name = file_name or os.path.basename(file_path)
-    new_file = client.files_upload_v2(
-        title=file_name,
-        filename=file_name,
-        content=open(file_path, 'rb').read(),
-    )
-
-    file_url = new_file.get("file").get("permalink")
-    client.chat_postMessage(
-        channel=channel,
-        text= ":wave: " + message + "\n " + file_url
-    )
 
 def log_txt_as_img(wh, xc, size=10):
     # wh a tuple of (width, height)
@@ -72,9 +21,11 @@ def log_txt_as_img(wh, xc, size=10):
     for bi in range(b):
         txt = Image.new("RGB", wh, color="white")
         draw = ImageDraw.Draw(txt)
-        font = ImageFont.truetype('data/DejaVuSans.ttf', size=size)
+        font = ImageFont.truetype("data/DejaVuSans.ttf", size=size)
         nc = int(40 * (wh[0] / 256))
-        lines = "\n".join(xc[bi][start:start + nc] for start in range(0, len(xc[bi]), nc))
+        lines = "\n".join(
+            xc[bi][start : start + nc] for start in range(0, len(xc[bi]), nc)
+        )
 
         try:
             draw.text((0, 0), lines, fill="black", font=font)
@@ -127,7 +78,7 @@ def count_params(model, verbose=False):
 
 def instantiate_from_config(config):
     if not "target" in config:
-        if config == '__is_first_stage__':
+        if config == "__is_first_stage__":
             return None
         elif config == "__is_unconditional__":
             return None
@@ -156,7 +107,12 @@ def _do_parallel_data_prefetch(func, Q, data, idx, idx_to_fn=False):
 
 
 def parallel_data_prefetch(
-        func: callable, data, n_proc, target_data_type="ndarray", cpu_intensive=True, use_worker_id=False
+    func: callable,
+    data,
+    n_proc,
+    target_data_type="ndarray",
+    cpu_intensive=True,
+    use_worker_id=False,
 ):
     # if target_data_type not in ["ndarray", "list"]:
     #     raise ValueError(
@@ -200,7 +156,7 @@ def parallel_data_prefetch(
         arguments = [
             [func, Q, part, i, use_worker_id]
             for i, part in enumerate(
-                [data[i: i + step] for i in range(0, len(data), step)]
+                [data[i : i + step] for i in range(0, len(data), step)]
             )
         ]
     processes = []
@@ -231,20 +187,18 @@ def parallel_data_prefetch(
         print("Exception: ", e)
         for p in processes:
             p.terminate()
-
         raise e
     finally:
         for p in processes:
             p.join()
         print(f"Prefetching complete. [{time.time() - start} sec.]")
 
-    if target_data_type == 'ndarray':
+    if target_data_type == "ndarray":
         if not isinstance(gather_res[0], np.ndarray):
             return np.concatenate([np.asarray(r) for r in gather_res], axis=0)
-
         # order outputs
         return np.concatenate(gather_res, axis=0)
-    elif target_data_type == 'list':
+    elif target_data_type == "list":
         out = []
         for r in gather_res:
             out.extend(r)
@@ -269,15 +223,12 @@ class MyPool:
             self.map_func = self.pool.imap
             if processes is not None:
                 self.map_func = partial(self.map_func, chunksize=chunksize)
-     
+
     def __enter__(self):
         if self.processes != 1:
             self.pool.__enter__()
         return self
- 
+
     def __exit__(self, *args):
         if self.processes != 1:
             return self.pool.__exit__(*args)
-
-# send_message_to_slack("This is a test message from Wei's difussion model")
-# send_image_to_slack("Hey, this is an image generated by diffusion model", "/data/wei/stable-diffusion/logs/2022-11-06T01-34-27_hpa-ldm-vq-4-unconditional-debug/images/train/denoise_row_gs-000800_e-000013_b-000020.png")
