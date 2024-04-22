@@ -1,5 +1,5 @@
 # Generative model for insilico painting
-*This is the algorithm that currently places first in ISBI 2024 Light [My Cell competition](https://lightmycells.grand-challenge.org/evaluation/phase-2/leaderboard/)*
+*This is the algorithm that currently places first in ISBI 2024 [Light My Cell](https://lightmycells.grand-challenge.org/evaluation/phase-2/leaderboard/) competition.*
   
 This code base is modified from [Stable-diffusion](https://github.com/CompVis/stable-diffusion) code base, thanks the authors who made their work public!
 
@@ -25,7 +25,7 @@ Final evaluation was performed on a hidden ~300 FOVs, which a submitted docker c
 
 ### Weights
 
-You can access all organelle checkpoints from here: until April 19, 2024 
+You can access all organelle checkpoints from here: checkpoint timestamped on April 19, 2024 
 
 ```
 wget https://ell-vault.stanford.edu/dav/trangle/www/ISBI2024_lmc_checkpoints.zip
@@ -42,19 +42,20 @@ This should contains:
 ### Docker container:
 You can test the winning algorithm on grand challenge platform [here](https://grand-challenge.org/algorithms/lmc_control/).
 The code to build and run docker container is also provided in this repo. This docker container takes transmitted light tiff as input, and output 4 same size predicted organelle tiff as outputs.
+You can also download the docker container image separately from [here](https://ell-vault.stanford.edu/dav/trangle/www/ISBI2024_lmc_algo0_latest.tar.gz) to test locally. The docker images of course contains the checkpoints described above. 
 
 ### Example results
 
-TODO: attached some results here.
+TODO: attached some image results here.
 
 ## BibTeX
 This is a place holder, have not had time to finish the manuscript yet.
 ```
 @misc{le2024tlpainting,
-      title={High-Resolution In Silico painting with generative model}, 
+      title={High-Resolution In Silico Painting with Generative Model}, 
       author={Trang Le and Emma Lundberg},
       year={2024},
-      eprint={2112.10752}, # TODO: Update this
+      eprint={XXXXXXX}, # TODO: Update this
       archivePrefix={arXiv},
       primaryClass={cs.CV}
 }
@@ -82,3 +83,7 @@ Each model configuration:
 72.8 M    Total params
 291.218   Total estimated model params size (MB)
 ```
+
+
+### Other attempt (in Match 2024)
+As some might have guessed by the repo, I did try latent diffusion for this problem, since modelling the joint distribution and conditioning of multiple different channel combination sound promising. However, my limited attempt on this dataset showed that the performance of 1 diffusion model is subpar to individual organelle models. This approach did work better on a different dataset, where each FOV contains all channels of interest.
