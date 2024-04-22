@@ -4,11 +4,6 @@ import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
 
-try:
-   import cPickle as pickle
-except:
-   import pickle
-
 from ldm.data import image_processing
 #from ldm.data.serialize import TorchSerializedList
 import torch.nn as nn
