@@ -35,7 +35,7 @@ class BFPaint:
         self.is_ldm = is_ldm # False: AE, True: use inputs as ref-image, outputs as stage_1
         #Define channels
         self.input_channels = input_channels
-        if output_channels == None:
+        if output_channels is None:
             self.output_channels = input_channels
         else:
             self.output_channels = output_channels

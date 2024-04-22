@@ -24,7 +24,7 @@ class BFPaint:
 
         #Define channels
         self.input_channels = input_channels
-        if output_channels == None:
+        if output_channels is None:
             self.output_channels = input_channels
         else:
             self.output_channels = output_channels
