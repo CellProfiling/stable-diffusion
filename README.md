@@ -1,5 +1,5 @@
 # Generative model for insilico painting
-*This is the algorithm that won first place in ISBI 2024 Light [My Cell competition](https://lightmycells.grand-challenge.org/evaluation/phase-2/leaderboard/)*
+*This is the algorithm that currently places first in ISBI 2024 Light [My Cell competition](https://lightmycells.grand-challenge.org/evaluation/phase-2/leaderboard/)*
   
 This code base is modified from [Stable-diffusion](https://github.com/CompVis/stable-diffusion) code base, thanks the authors who made their work public!
 
@@ -13,7 +13,10 @@ conda activate ldmbf
 ```
 
 ## Dataset
+The models were trained on ~56700 previously unpublished images from 30 data acquisition sites. This dataset is very heterogeneous, including 3 imaging modality (Bright Field, Phase Contrast, Differential Inference Contrast microscopy), 40x - 100x objective, multiple different cell lines etc. Most importantly is the class imbalance (i.e. there's a few order of magnitude difference in number of training data for Actin vs Nucleus), and vaying combination of channels per image (1-3 organelles for each input). There's no field of view with all organelles.
+More about the training dataset [here](https://lightmycells.grand-challenge.org/database/).
 
+Final evaluation was performed on a hidden ~300 FOVs, which a submitted docker container will be evaluated for.
 
 ## VQGAN
 
@@ -22,7 +25,7 @@ conda activate ldmbf
 
 ### Weights
 
-You can access all organelle checkpoints from here: ntil April 19, 2024 
+You can access all organelle checkpoints from here: until April 19, 2024 
 
 ```
 wget https://ell-vault.stanford.edu/dav/trangle/www/ISBI2024_lmc_checkpoints.zip
@@ -35,19 +38,17 @@ This should contains:
 - `BF_to_Actin.ckpt`: 722MB.
 - `BF_to_Tubulin.ckpt`: 722MB.
 
-Evaluations with different classifier-free guidance scales (1.5, 2.0, 3.0, 4.0,
-5.0, 6.0, 7.0, 8.0) and 50 PLMS sampling
-steps show the relative improvements of the checkpoints:
-![sd evaluation results](assets/v1-variants-scores.jpg)
 
 ### Docker container:
 You can test the winning algorithm on grand challenge platform [here](https://grand-challenge.org/algorithms/lmc_control/).
 The code to build and run docker container is also provided in this repo. This docker container takes transmitted light tiff as input, and output 4 same size predicted organelle tiff as outputs.
 
-### Image Modification with Stable Diffusion
+### Example results
+
+TODO: attached some results here.
 
 ## BibTeX
-
+This is a place holder, have not had time to finish the manuscript yet.
 ```
 @misc{le2024tlpainting,
       title={High-Resolution In Silico painting with generative model}, 
