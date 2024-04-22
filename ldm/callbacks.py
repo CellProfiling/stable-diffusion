@@ -404,14 +404,14 @@ class CPUMemoryMonitor(Callback):
             size /= 1024.0
         return "%.1f%s" % (size, unit)
 
-    def on_train_epoch_start(self):
+    def on_train_epoch_start(self, trainer, pl_module):
         print("Start of training epoch", self.str())
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self, trainer, pl_module):
         print("End of training epoch", self.str())
 
-    def on_validation_epoch_start(self):
+    def on_validation_epoch_start(self, trainer, pl_module):
         print("Start of validation epoch", self.str())
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self, trainer, pl_module):
         print("End of validation epoch", self.str())
