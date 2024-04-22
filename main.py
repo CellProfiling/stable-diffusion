@@ -1,7 +1,7 @@
 import argparse, os, sys, datetime, glob, socket, subprocess
 from contextlib import redirect_stderr, redirect_stdout
 
-from memory_profiler import profile
+#from memory_profiler import profile
 from omegaconf import OmegaConf
 from packaging import version
 import pytorch_lightning as pl
@@ -19,8 +19,8 @@ def main(opt, logdir, nowname):
     seed_everything(opt.seed)
 
     # try:
-        # import pdb; pdb.set_trace()
-        # init and save configs
+    # import pdb; pdb.set_trace()
+    # init and save configs
     configs = [OmegaConf.load(cfg) for cfg in opt.base]
     cli = OmegaConf.from_dotlist(unknown)
     config = OmegaConf.merge(*configs, cli)
@@ -39,16 +39,22 @@ def main(opt, logdir, nowname):
         del trainer_config["accelerator"]
         cpu = True
     else:
-        assert "," in trainer_config["gpus"], "Please specify GPUs as comma-separated list."
+        assert (
+            "," in trainer_config["gpus"]
+        ), "Please specify GPUs as comma-separated list."
         gpuinfo = trainer_config["gpus"]
         print(f"Running on GPUs {gpuinfo}")
         cpu = False
     trainer_opt = argparse.Namespace(**trainer_config)
     if hasattr(trainer_opt, "profiler"):
         if trainer_opt.profiler == "simple":
-            trainer_opt.profiler = pl.profiler.SimpleProfiler(dirpath=logdir, filename="perf_logs")
+            trainer_opt.profiler = pl.profiler.SimpleProfiler(
+                dirpath=logdir, filename="perf_logs"
+            )
         elif trainer_opt.profiler == "advanced":
-            trainer_opt.profiler = pl.profiler.AdvancedProfiler(dirpath=logdir, filename="perf_logs")
+            trainer_opt.profiler = pl.profiler.AdvancedProfiler(
+                dirpath=logdir, filename="perf_logs"
+            )
     lightning_config.trainer = trainer_config
 
     # model
@@ -70,14 +76,14 @@ def main(opt, logdir, nowname):
                 "project": "super-multiplex-cell",
                 "config": config_to_log,
                 "resume": "allow",
-            }
+            },
         },
         "testtube": {
             "target": "pytorch_lightning.loggers.TestTubeLogger",
             "params": {
                 "name": "testtube",
                 "save_dir": logdir,
-            }
+            },
         },
     }
     default_logger_cfg = default_logger_cfgs["wandb"]
@@ -97,7 +103,7 @@ def main(opt, logdir, nowname):
             "filename": "{epoch:06}",
             "verbose": True,
             "save_last": True,
-        }
+        },
     }
     if hasattr(model, "monitor"):
         print(f"Monitoring {model.monitor} as checkpoint metric.")
@@ -107,10 +113,10 @@ def main(opt, logdir, nowname):
     if "modelcheckpoint" in lightning_config:
         modelckpt_cfg = lightning_config.modelcheckpoint
     else:
-        modelckpt_cfg =  OmegaConf.create()
+        modelckpt_cfg = OmegaConf.create()
     modelckpt_cfg = OmegaConf.merge(default_modelckpt_cfg, modelckpt_cfg)
     print(f"Merged modelckpt-cfg: \n{modelckpt_cfg}")
-    if version.parse(pl.__version__) < version.parse('1.4.0'):
+    if version.parse(pl.__version__) < version.parse("1.4.0"):
         trainer_kwargs["checkpoint_callback"] = instantiate_from_config(modelckpt_cfg)
 
     # add callback which sets up log directory
@@ -125,67 +131,66 @@ def main(opt, logdir, nowname):
                 "cfgdir": cfgdir,
                 "config": config,
                 "lightning_config": lightning_config,
-            }
+            },
         },
         "image_logger": {
             "target": "ldm.callbacks.ImageLogger",
-            "params": {
-                "batch_frequency": 750,
-                "max_images": 4,
-                "clamp": True
-            }
+            "params": {"batch_frequency": 750, "max_images": 4, "clamp": True},
         },
         "learning_rate_logger": {
             "target": "pytorch_lightning.callbacks.LearningRateMonitor",
             "params": {
                 "logging_interval": "step",
                 # "log_momentum": True
-            }
+            },
         },
-        "cuda_callback": {
-            "target": "ldm.callbacks.CUDACallback"
-        },
-        "cpu_mem_monitor": {
-            "target": "ldm.callbacks.CPUMemoryMonitor"
-        },
+        "cuda_callback": {"target": "ldm.callbacks.CUDACallback"},
+        "cpu_mem_monitor": {"target": "ldm.callbacks.CPUMemoryMonitor"},
     }
-    if version.parse(pl.__version__) >= version.parse('1.4.0'):
-        default_callbacks_cfg.update({'checkpoint_callback': modelckpt_cfg})
+    if version.parse(pl.__version__) >= version.parse("1.4.0"):
+        default_callbacks_cfg.update({"checkpoint_callback": modelckpt_cfg})
 
     if "callbacks" in lightning_config:
         callbacks_cfg = lightning_config.callbacks
     else:
         callbacks_cfg = OmegaConf.create()
 
-    if 'metrics_over_trainsteps_checkpoint' in callbacks_cfg:
+    if "metrics_over_trainsteps_checkpoint" in callbacks_cfg:
         print(
-            'Caution: Saving checkpoints every n train steps without deleting. This might require some free space.')
+            "Caution: Saving checkpoints every n train steps without deleting. This might require some free space."
+        )
         default_metrics_over_trainsteps_ckpt_dict = {
-            'metrics_over_trainsteps_checkpoint':
-                {"target": 'pytorch_lightning.callbacks.ModelCheckpoint',
-                    'params': {
-                        "dirpath": os.path.join(ckptdir, 'trainstep_checkpoints'),
-                        "filename": "{epoch:06}-{step:09}",
-                        "verbose": True,
-                        'save_top_k': -1,
-                        'every_n_train_steps': 10000,
-                        'save_weights_only': True
-                    }
-                    }
+            "metrics_over_trainsteps_checkpoint": {
+                "target": "pytorch_lightning.callbacks.ModelCheckpoint",
+                "params": {
+                    "dirpath": os.path.join(ckptdir, "trainstep_checkpoints"),
+                    "filename": "{epoch:06}-{step:09}",
+                    "verbose": True,
+                    "save_top_k": -1,
+                    "every_n_train_steps": 10000,
+                    "save_weights_only": True,
+                },
+            }
         }
         default_callbacks_cfg.update(default_metrics_over_trainsteps_ckpt_dict)
 
     callbacks_cfg = OmegaConf.merge(default_callbacks_cfg, callbacks_cfg)
-    if 'ignore_keys_callback' in callbacks_cfg and hasattr(trainer_opt, 'resume_from_checkpoint'):
-        callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
-    elif 'ignore_keys_callback' in callbacks_cfg:
-        del callbacks_cfg['ignore_keys_callback']
+    if "ignore_keys_callback" in callbacks_cfg and hasattr(
+        trainer_opt, "resume_from_checkpoint"
+    ):
+        callbacks_cfg.ignore_keys_callback.params[
+            "ckpt_path"
+        ] = trainer_opt.resume_from_checkpoint
+    elif "ignore_keys_callback" in callbacks_cfg:
+        del callbacks_cfg["ignore_keys_callback"]
 
-    trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
+    trainer_kwargs["callbacks"] = [
+        instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg
+    ]
     trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
     trainer.logdir = logdir  ###
-    print('Streaming bool:', opt.streaming) # False, No streaming for this project
-    
+    print("Streaming bool:", opt.streaming)  # False, No streaming for this project
+
     data = instantiate_from_config(config.data)
     # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
     # calling these ourselves should not be necessary but it is.
@@ -199,10 +204,10 @@ def main(opt, logdir, nowname):
     # configure learning rate
     bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
     if not cpu:
-        ngpu = len(str(lightning_config.trainer.gpus).strip(",").split(','))
+        ngpu = len(str(lightning_config.trainer.gpus).strip(",").split(","))
     else:
         ngpu = 1
-    if 'accumulate_grad_batches' in lightning_config.trainer:
+    if "accumulate_grad_batches" in lightning_config.trainer:
         accumulate_grad_batches = lightning_config.trainer.accumulate_grad_batches
     else:
         accumulate_grad_batches = 1
@@ -212,12 +217,13 @@ def main(opt, logdir, nowname):
         model.learning_rate = accumulate_grad_batches * ngpu * bs * base_lr
         print(
             "Setting learning rate to {:.2e} = {} (accumulate_grad_batches) * {} (num_gpus) * {} (batchsize) * {:.2e} (base_lr)".format(
-                model.learning_rate, accumulate_grad_batches, ngpu, bs, base_lr))
+                model.learning_rate, accumulate_grad_batches, ngpu, bs, base_lr
+            )
+        )
     else:
         model.learning_rate = base_lr
         print("++++ NOT USING LR SCALING ++++")
         print(f"Setting learning rate to {model.learning_rate:.2e}")
-
 
     # allow checkpointing via USR1
     def melk(*args, **kwargs):
@@ -227,12 +233,10 @@ def main(opt, logdir, nowname):
             ckpt_path = os.path.join(ckptdir, "last.ckpt")
             trainer.save_checkpoint(ckpt_path)
 
-
     def divein(*args, **kwargs):
         if trainer.global_rank == 0:
-            import pudb;
+            import pudb
             pudb.set_trace()
-
 
     import signal
 
@@ -245,12 +249,17 @@ def main(opt, logdir, nowname):
             trainer.fit(model, data)
         except Exception:
             melk()
-            if "log_to_slack" in lightning_config.callbacks.image_logger.params and lightning_config.callbacks.image_logger.params.log_to_slack:
-                send_message_to_slack("Oops, the diffusion model training process has stopped unexpectedly")
+            if (
+                "log_to_slack" in lightning_config.callbacks.image_logger.params
+                and lightning_config.callbacks.image_logger.params.log_to_slack
+            ):
+                send_message_to_slack(
+                    "Oops, the diffusion model training process has stopped unexpectedly"
+                )
             raise
     if not opt.no_test and not trainer.interrupted:
         trainer.test(model, data)
-            
+
     if trainer.global_rank == 0:
         print(trainer.profiler.summary())
 
@@ -310,7 +319,7 @@ if __name__ == "__main__":
     opt.now = now
     opt.hostname = socket.gethostname()
     opt.pid = os.getpid()
-    opt.screen = subprocess.check_output('echo $STY', shell=True).decode('utf').strip()
+    opt.screen = subprocess.check_output("echo $STY", shell=True).decode("utf").strip()
 
     if opt.name and opt.resume:
         raise ValueError(
@@ -347,20 +356,31 @@ if __name__ == "__main__":
         else:
             name = ""
         nowname = now + name + opt.postfix
-        logdir = os.path.join(opt.logdir, "debug_logs" if opt.debug else "logs", nowname)
+        logdir = os.path.join(
+            opt.logdir, "debug_logs" if opt.debug else "logs", nowname
+        )
         os.makedirs(logdir)
     import wandb
-    wandb.init(project="super-multiplex-cell", config=opt, resume="allow", settings=wandb.Settings(start_method="fork"), name=nowname, mode="offline" if opt.debug else "online", id=nowname)
+
+    wandb.init(
+        project="super-multiplex-cell",
+        config=opt,
+        resume="allow",
+        settings=wandb.Settings(start_method="fork"),
+        name=nowname,
+        mode="offline" if opt.debug else "online",
+        id=nowname,
+    )
     print(logdir)
     print(opt)
     if opt.debug:
         main(opt, logdir, nowname)
     else:
         log_filename = os.path.join(logdir, f"{now}-log.txt")
-        with open(log_filename, 'w') as f:
+        with open(log_filename, "w") as f:
             with redirect_stdout(f):
                 with redirect_stderr(f):
-                    print(f'Redirecting stdout and stderr to {log_filename}...')
+                    print(f"Redirecting stdout and stderr to {log_filename}...")
                     print("A message to stdout...")
                     print("A message to stderr...", file=sys.stderr)
                     main(opt, logdir, nowname)
