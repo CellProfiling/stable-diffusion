@@ -101,6 +101,12 @@ class BFPaint:
             
         self.metadata["split"] = ["train" if idx in train_data.index else "validation" for idx in self.metadata.index]
         self.metadata.loc[(self.metadata.split=='validation') & (self.metadata.Study=='jump'), 'split'] = 'extra'
+        # For training with JUMP, refine stage, drop most of the training samples from JUMP
+        indexes_to_drop = self.metadata[(self.metadata.split=='train') & (self.metadata.Study=='jump')].sample(frac=0.8).index
+        print(indexes_to_drop)
+        print(self.metadata.Study.value_counts())
+        self.metadata.drop(indexes_to_drop, inplace=True)
+        print(self.metadata.Study.value_counts())
         self.metadata = self.metadata.sample(frac=1).reset_index(drop=True)   
         self.indices = self.metadata[(self.metadata.split==group)].index
         self.image_ids = self.metadata[(self.metadata.split==group)].Id
