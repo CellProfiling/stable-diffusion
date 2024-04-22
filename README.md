@@ -18,12 +18,9 @@ More about the training dataset [here](https://lightmycells.grand-challenge.org/
 
 Final evaluation was performed on a hidden ~300 FOVs, which a submitted docker container will be evaluated for.
 
-## VQGAN
+## Model & Weights
 
 1 VQGAN model was trained for each organnelle, with varying performance. These models can be used separately for your organelle of interest.
-
-
-### Weights
 
 You can access all organelle checkpoints from here: checkpoint timestamped on April 19, 2024 
 
@@ -43,13 +40,13 @@ This should contains:
 You can test the winning algorithm on grand challenge platform [here](https://grand-challenge.org/algorithms/lmc_control/).
 The code to build and run docker container is also provided in this repo. This docker container takes transmitted light tiff as input, and output 4 same size predicted organelle tiff as outputs.
 
-You can also download the docker container image separately from [here](https://ell-vault.stanford.edu/dav/trangle/www/ISBI2024_lmc_algo0_latest.tar.gz) to test locally. The docker images of course contains the checkpoints described above. 
+You can also download the docker container image from [here](https://ell-vault.stanford.edu/dav/trangle/www/ISBI2024_lmc_algo0_latest.tar.gz) to test locally. The docker image of course contains the checkpoints described above. 
 
 ### Example results
 
 TODO: attached some image results here.
 
-## BibTeX
+### BibTeX
 This is a place holder, have not had time to finish the manuscript yet.
 ```
 @misc{le2024tlpainting,
