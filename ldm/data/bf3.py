@@ -26,7 +26,7 @@ location_mapping = {"Mitochondria": 0, "Actin": 1, "Tubulin": 2}
 tiff_ch_maping = {"BF": 0, "Nucleus": 1, "Mitochondria": 2, "Actin": 3, "Tubulin": 4}
 
 
-def read_ome_tiff_rescale(file_id):  # , mode='DIC'):
+def read_ome_tiff_rescale(file_id, mode='DIC'):
     d = "/scratch/groups/emmalu/lightmycell/datasets"
     img = tifffile.imread(f"{d}/{file_id}")
     """
