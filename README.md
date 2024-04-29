@@ -1,7 +1,7 @@
 # Generative model for insilico painting
 *This is the algorithm that currently places first in ISBI 2024 [Light My Cell](https://lightmycells.grand-challenge.org/evaluation/phase-2/leaderboard/) competition.*
   
-This code base is modified from [Stable-diffusion](https://github.com/CompVis/stable-diffusion) code base, thanks the authors who made their work public!
+This repo is modified from [Stable-diffusion](https://github.com/CompVis/stable-diffusion) code base, thanks the authors who made their work public!
 
 ## Requirements
 A suitable [conda](https://conda.io/) environment named `ldm` can be created
@@ -20,9 +20,9 @@ Final evaluation was performed on a hidden ~300 FOVs, which a submitted docker c
 
 ## Model & Weights
 
-1 VQGAN model was trained for each organnelle, with varying performance. These models can be used separately for your organelle of interest.
+1 simplified VQGAN model was trained for each organnelle, with varying performance. These models can be used separately for your organelle of interest.
 
-You can access all organelle checkpoints from here: checkpoint timestamped on April 19, 2024 
+You can access all organelle checkpoints from here: checkpoint timestamped on April 19, 2024. 
 
 ```
 wget https://ell-vault.stanford.edu/dav/trangle/www/ISBI2024_lmc_checkpoints.zip
@@ -35,6 +35,7 @@ This should contains:
 - `BF_to_Actin.ckpt`: 722MB.
 - `BF_to_Tubulin.ckpt`: 722MB.
 
+> **_NOTE:_** I stopped trainning to submit before the deadline of April 20. However, it hasn't converged! This means that to have better and more generalizable models for the community to use later, we can re-split the whole dataset (when test set become public), and train further for better models.
 
 ### Docker container:
 You can test the winning algorithm on grand challenge platform [here](https://grand-challenge.org/algorithms/lmc_control/).
@@ -59,7 +60,7 @@ This is a place holder, have not had time to finish the manuscript yet.
 }
 ```
 
-### Train VQGAN
+### Training & Inference
 This command train an vqgan to predict organelle from transmitted light inputs
 ```
 python main.py -t -b configs/autoencoder/lmc_BF_<organelle>.yaml --gpus=0,
